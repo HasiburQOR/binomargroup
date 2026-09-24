@@ -1,5 +1,9 @@
 # Binomar Group — 3D Company District 🏔️
 
+> 📖 **New to this project?** Read **[`DOCUMENTATION.md`](DOCUMENTATION.md)** first —
+> it contains the full vision, tech stack, repo map, deployment guide, design
+> language and the prioritized improvement roadmap.
+
 An interactive 3D mountain-top village of every company in the Binomar Group — featured brands ring the summit plaza, the rest step down the slopes along a winding road.
 Each company is a **building**: hover for a quick info card,
 click to open its full detail page. Add a company in the
