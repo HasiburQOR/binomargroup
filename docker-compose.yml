@@ -1,0 +1,27 @@
+# Dokploy Compose deployment for binomargroup.com
+# Builds the nginx site image from the Dockerfile in this repo.
+#
+# Dokploy note: Compose deployments route domains via Traefik LABELS
+# (not the Domains UI). Set an environment variable in the Dokploy
+# Compose service:  DOKPLOY_DOMAIN = binomargroup.com
+# (Settings -> Environment) and redeploy once DNS points at the server.
+# Without DOKPLOY_DOMAIN the router falls back to a placeholder host.
+
+services:
+  web:
+    build: .
+    image: binomar-site
+    container_name: binomar-site
+    restart: unless-stopped
+    networks:
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.binomar-site.rule=Host(`${DOKPLOY_DOMAIN:-binomar-site.local}`)"
+      - "traefik.http.routers.binomar-site.entrypoints=websecure"
+      - "traefik.http.routers.binomar-site.tls.certresolver=letsencrypt"
+      - "traefik.http.services.binomar-site.loadbalancer.server.port=80"
+
+networks:
+  dokploy-network:
+    external: true
