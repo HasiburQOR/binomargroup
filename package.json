@@ -1,0 +1,7 @@
+{
+  "name": "binomar-3d-website",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Binomar Group — interactive 3D company district (Three.js, no build step, Sanity-ready)"
+}

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Binomar Group — Company District · Interactive 3D Map</title>
+<meta name="description" content="Explore every company of Binomar Group on an interactive 3D map. Hover a building for a quick intro, click for full details." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏙️</text></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<header class="hero" id="hero">
+<div id="scene"></div>
+<div class="vignette"></div>
+<div id="flyFade" class="fly-fade" aria-hidden="true"></div>
+
+<div id="loader" class="loader">
+  <div class="loader-mark">🏔️</div>
+  <div class="loader-title">BINOMAR GROUP</div>
+  <div class="loader-sub">Lighting the lamps…</div>
+  <div class="loader-bar"><i></i></div>
+</div>
+
+<script>
+/* file:// guard — browsers block ES modules on the file:// protocol,
+   so double-clicking index.html cannot work. Show clear instructions
+   instead of an endless "Building the district…" loader. */
+if (location.protocol === 'file:') {
+  document.getElementById('loader').innerHTML =
+    '<div class="loader-mark">🖥️</div>' +
+    '<div class="loader-title">START A LOCAL SERVER</div>' +
+    '<div class="loader-error">This 3D site uses ES modules, which browsers ' +
+    'block when the page is opened directly from disk (file://).<br><br>' +
+    '▶ Easiest: open a terminal in this folder and run<br>' +
+    '<b>node server.mjs</b> — then visit <b>http://localhost:8080</b><br><br>' +
+    '▶ Or in VS Code: install the <b>Live Server</b> extension, then ' +
+    'right-click <b>index.html</b> → “Open with Live Server”</div>';
+}
+</script>
+
+<div class="hud hud-top">
+  <div class="brand">
+    <div class="brand-badge">B</div>
+    <div>
+      <div class="brand-name">BINOMAR GROUP</div>
+      <div class="brand-sub">Company District · Interactive 3D Map</div>
+    </div>
+  </div>
+  <div class="hud-actions">
+    <button id="btnFind" class="icon-btn" title="Find a company" aria-label="Find a company"
+            aria-expanded="false" aria-controls="finder">🔍</button>
+    <button id="btnNight" class="icon-btn" title="Toggle day / night" aria-label="Toggle day or night">☀️</button>
+    <button id="btnHome" class="icon-btn" title="Reset view" aria-label="Reset view">⟳</button>
+    <button id="btnFull" class="icon-btn" title="Fullscreen" aria-label="Fullscreen">⛶</button>
+  </div>
+</div>
+
+<!-- the finder: search + the full list, and the keyboard-accessible route
+     to every company for anyone not orbiting a 3D map with a mouse -->
+<aside id="finder" class="finder" aria-label="Find a company" hidden>
+  <div class="finder-head">
+    <input id="finderInput" class="finder-input" type="search" autocomplete="off"
+           placeholder="Search companies…" aria-label="Search companies" />
+    <button id="finderClose" class="icon-btn" aria-label="Close the company list">✕</button>
+  </div>
+  <p id="finderCount" class="finder-count" aria-live="polite"></p>
+  <ul id="finderList" class="finder-list"></ul>
+</aside>
+
+<div id="hudStats" class="hud hud-stats"></div>
+<div id="hudLegend" class="hud hud-legend">
+  <button id="legendClose" class="legend-x" aria-label="Hide the controls legend">✕</button>
+  <span><b>Drag</b> to look</span>
+  <span><b>Scroll</b> to zoom</span>
+  <span><b>Click</b> a building</span>
+  <span class="legend-key"><b>/</b> to search</span>
+</div>
+
+<div id="tooltip" class="tooltip" role="status" aria-live="polite">
+  <div class="tt-head">
+    <div id="ttAvatar" class="tt-avatar">B</div>
+    <div>
+      <div id="ttName" class="tt-name"></div>
+      <span id="ttIndustry" class="tt-industry"></span>
+    </div>
+  </div>
+  <div id="ttTagline" class="tt-tagline"></div>
+  <div id="ttCta" class="tt-cta">Click to explore →</div>
+</div>
+</header>
+
+<noscript>
+  <div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0b1220;color:#eaf1fb;font-family:sans-serif;text-align:center;padding:30px">
+    This interactive 3D map needs JavaScript enabled.
+  </div>
+</noscript>
+
+<script src="js/config.js"></script>
+<script src="data/companies.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/city.js"></script>
+</body>
+</html>

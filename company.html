@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Company — Binomar Group</title>
+<meta name="description" content="Company profile — part of the Binomar Group district." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏙️</text></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body class="page-company">
+
+<nav class="topbar">
+  <a class="back" id="backLink" href="index.html">←&nbsp; Back to District</a>
+  <div class="topbar-title">BINOMAR GROUP</div>
+  <a class="btn-ghost" id="mapLink" href="index.html">🗺️ Explore Map</a>
+</nav>
+
+<main id="app" class="company-app">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:90px 20px">
+    <div style="font-size:42px">🏙️</div>
+    <div style="color:#9fb0c7;font-size:13px">Loading company…</div>
+  </div>
+</main>
+
+<footer class="site-footer">© 2026 Binomar Group · Company District — interactive 3D map</footer>
+
+<script>
+/* file:// guard — ES modules cannot load from file:// (see index.html) */
+if (location.protocol === 'file:') {
+  document.getElementById('app').innerHTML =
+    '<div class="notfound"><h1>🖥️ Start a local server</h1>' +
+    '<p>This page loads its data through ES modules, which browsers block on file://.</p>' +
+    '<p>Run <b>node server.mjs</b> in the project folder and open ' +
+    '<b>http://localhost:8080/company.html</b> — or use the VS Code Live Server extension.</p>' +
+    '<p style="margin-top:22px"><a class="btn" href="index.html">🗺️ Back to the 3D district</a></p></div>';
+}
+</script>
+<script src="js/config.js"></script>
+<script src="data/companies.js"></script>
+<script type="module" src="js/company.js"></script>
+</body>
+</html>
