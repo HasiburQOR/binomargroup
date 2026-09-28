@@ -41,6 +41,8 @@
   --on-accent:#241a04;            /* text that sits on an ember fill */
   --radius:16px;
   --font:'Plus Jakarta Sans',-apple-system,'Segoe UI',Roboto,Arial,sans-serif;
+  /* the display serif: big headlines only, echoing the calligraphic monogram */
+  --font-display:'Cormorant Garamond','Cormorant',Garamond,Georgia,'Times New Roman',serif;
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;height:100%}
@@ -61,15 +63,54 @@ img{max-width:100%}
 .fly-fade{position:fixed;inset:0;z-index:55;pointer-events:none;opacity:0;
   background:radial-gradient(ellipse at center,rgba(10,16,32,.35),var(--night-0) 78%)}
 
+/* ---------- film grain ----------
+   A whisper of moving grain over the 3D view takes the edge off the
+   computer-graphics look. The noise is an SVG turbulence tile, rasterised
+   once; the layer only jumps about by transform, a few times a second. */
+.hero-grain{position:absolute;inset:-60px;z-index:3;pointer-events:none;opacity:.07;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1.4 -.35'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation:grain .7s steps(5) infinite}
+@keyframes grain{0%{transform:translate3d(0,0,0)}20%{transform:translate3d(-24px,14px,0)}40%{transform:translate3d(18px,-30px,0)}
+  60%{transform:translate3d(-12px,-18px,0)}80%{transform:translate3d(28px,22px,0)}100%{transform:translate3d(0,0,0)}}
+
 /* ---------- loader ---------- */
 .loader{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
-  background:linear-gradient(168deg,var(--night-2),var(--night-0) 58%,#0d1b3c);transition:opacity .6s ease,visibility .6s}
+  background:radial-gradient(ellipse at 50% 42%,rgba(227,189,99,.10),transparent 46%),
+    linear-gradient(168deg,var(--night-2),var(--night-0) 58%,#0d1b3c);
+  transition:opacity .6s ease,visibility .6s}
 .loader.hide{opacity:0;visibility:hidden}
+/* the monogram draws itself: a conic mask sweeps round the circle as far as
+   the load has got (--p, 0 → 1, eased by the registered property) */
+@property --p{syntax:'<number>';inherits:true;initial-value:0}
+@property --iris{syntax:'<percentage>';inherits:false;initial-value:0%}
+.loader{--p:0;transition:opacity .6s ease,visibility .6s,--p .6s cubic-bezier(.2,.7,.2,1)}
+.loader-logo{position:relative;width:150px;height:150px;margin-bottom:8px;
+  -webkit-mask:conic-gradient(from 200deg,#000 calc(var(--p) * 372deg - 12deg),transparent calc(var(--p) * 372deg));
+          mask:conic-gradient(from 200deg,#000 calc(var(--p) * 372deg - 12deg),transparent calc(var(--p) * 372deg));
+  filter:drop-shadow(0 8px 30px rgba(227,189,99,.28));
+  transition:transform .9s cubic-bezier(.2,.7,.2,1),opacity .7s ease}
+.loader-logo img{width:100%;height:100%;display:block}
+/* a light passing over the gold, cut to the shape of the mark itself */
+.loader-shine{position:absolute;inset:0;pointer-events:none;mix-blend-mode:screen;
+  background:linear-gradient(105deg,transparent 38%,rgba(255,240,205,.9) 50%,transparent 62%) 0 0/260% 100% no-repeat;
+  -webkit-mask:url(../assets/brand/logo.webp) center/contain no-repeat;
+          mask:url(../assets/brand/logo.webp) center/contain no-repeat;
+  animation:shine 2.8s cubic-bezier(.45,0,.2,1) .6s infinite}
+@keyframes shine{0%{background-position:130% 0}60%,100%{background-position:-30% 0}}
+.loader-title{background:linear-gradient(90deg,#f3dca0,#e3bd63 45%,#b98d3a);-webkit-background-clip:text;background-clip:text;color:transparent}
+/* the exit: an iris opens from the centre onto the opening shot while the
+   mark swells and fades through it */
+.loader.opening{--iris:-6%;
+  -webkit-mask:radial-gradient(circle at 50% 50%,transparent var(--iris),#000 calc(var(--iris) + 6%));
+          mask:radial-gradient(circle at 50% 50%,transparent var(--iris),#000 calc(var(--iris) + 6%))}
+.loader.opening.hide{--iris:110%;opacity:1;visibility:hidden;
+  transition:--iris 1s cubic-bezier(.65,0,.25,1),visibility 1s}
+.loader.hide .loader-logo{transform:scale(1.35);opacity:0}
 .loader-mark{font-size:44px;animation:float 2.4s ease-in-out infinite}
 .loader-title{font-weight:800;letter-spacing:.35em;font-size:15px;color:var(--text)}
 .loader-sub{font-size:12.5px;color:var(--muted)}
 .loader-error{color:#fca5a5;font-size:13px;max-width:420px;text-align:center;padding:0 16px}
-.loader-bar{width:190px;height:4px;border-radius:99px;overflow:hidden;background:rgba(var(--haze-rgb),.20)}
+.loader-bar{width:160px;height:2px;margin-top:4px;border-radius:99px;overflow:hidden;background:rgba(var(--haze-rgb),.20)}
 .loader-bar i{display:block;height:100%;width:40%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent-2));animation:slide 1.1s ease-in-out infinite}
 @keyframes slide{0%{transform:translateX(-110%)}100%{transform:translateX(300%)}}
 @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
@@ -163,8 +204,17 @@ body.page-company{background:radial-gradient(1200px 600px at 80% -10%,var(--nigh
 .hero-top{display:flex;gap:22px;align-items:center;flex-wrap:wrap}
 .hero-avatar{width:88px;height:88px;border-radius:20px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);
   display:flex;align-items:center;justify-content:center;font-weight:800;font-size:36px;flex:none;overflow:hidden}
-.hero-avatar img{width:100%;height:100%;object-fit:cover}
-.hero-title{font-size:clamp(26px,4.6vw,42px);font-weight:800;line-height:1.08;margin:10px 0 6px}
+.hero-avatar img{width:100%;height:100%;object-fit:contain;background:#fff;padding:12%;box-sizing:border-box}
+
+/* ---------- company logos in badges (fillBadge in data.js) ----------
+   A real logo sits whole on a light tile — most marks are drawn for white —
+   in every badge size; without one, the initial on the brand colour. */
+.has-logo{background:#f7f8fb!important;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(10,20,40,.08)}
+.has-logo img{width:100%;height:100%;display:block;object-fit:contain;padding:14%;box-sizing:border-box}
+/* the group's own gold monogram is drawn for the dark: no tile */
+.has-logo.group-mark{background:none!important;box-shadow:none}
+.has-logo.group-mark img{padding:0}
+.hero-title{font-family:var(--font-display);font-size:clamp(32px,5.4vw,52px);font-weight:600;line-height:1.08;margin:10px 0 6px}
 .hero-tagline{font-size:15px;opacity:.92;max-width:640px;line-height:1.55;margin:0}
 .badge{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:99px;background:rgba(255,255,255,.16);
   border:1px solid rgba(255,255,255,.25);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
@@ -189,7 +239,7 @@ body.page-company{background:radial-gradient(1200px 600px at 80% -10%,var(--nigh
 .pill:hover{border-color:var(--accent);color:var(--accent);transform:translateY(-2px)}
 .pill .dot{display:inline-block;width:8px;height:8px;border-radius:99px;margin-right:7px}
 .notfound{text-align:center;padding:90px 20px}
-.notfound h1{font-size:34px;margin:0 0 10px}
+.notfound h1{font-family:var(--font-display);font-weight:600;font-size:42px;margin:0 0 10px}
 .notfound p{color:var(--muted)}
 footer.site-footer{text-align:center;color:var(--muted);font-size:12px;padding:26px;border-top:1px solid var(--line)}
 
@@ -207,6 +257,9 @@ footer.site-footer{text-align:center;color:var(--muted);font-size:12px;padding:2
   /* four controls plus the brand will not fit 375px; the browser's own
      chrome already handles fullscreen on a phone, so that one goes */
   #btnFull{display:none}
+  /* …and the sound toggle takes the reset button's place: on a phone the
+     "District" chip under the map already flies home */
+  #btnHome{display:none}
   .hud-top{padding:10px 10px;gap:8px}
   .brand{min-width:0;overflow:hidden}
   .brand{padding:8px 11px;border-radius:12px}
@@ -225,11 +278,21 @@ footer.site-footer{text-align:center;color:var(--muted);font-size:12px;padding:2
 /* ---------- navbar: the site chrome above the 3D hero ---------- */
 .navbar{position:fixed;top:0;left:0;right:0;z-index:40;height:64px;display:flex;align-items:center;gap:14px;
   padding:0 clamp(12px,3vw,26px);background:rgba(5,10,26,.82);backdrop-filter:blur(14px);
-  border-bottom:1px solid rgba(var(--ember-rgb),.22)}
+  border-bottom:1px solid rgba(var(--ember-rgb),.22);transition:background .5s ease,box-shadow .5s ease,border-color .5s ease}
+/* on the landing page (city.js adds .live): light over the district so the
+   sky reads through it, frosted glass once the page has slid over the map */
+.navbar.live:not(.past){background:linear-gradient(180deg,rgba(4,8,20,.72),rgba(4,8,20,.42));border-bottom-color:rgba(var(--ember-rgb),.14)}
+.navbar.live.past{background:rgba(9,16,36,.66);backdrop-filter:blur(18px) saturate(1.5);
+  box-shadow:0 12px 34px rgba(0,0,0,.34)}
 .nav-brand{display:flex;gap:11px;align-items:center;color:var(--text);min-width:0}
 .nav-badge{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;
   font-weight:800;font-size:17px;color:var(--on-accent);background:linear-gradient(135deg,var(--accent),var(--accent-2));
   box-shadow:0 4px 16px rgba(var(--ember-rgb),.28);flex:none}
+/* the real mark: gold on the navy bar, no tile behind it */
+.nav-badge.logo{width:42px;height:42px;border-radius:0;background:none;box-shadow:none}
+.nav-badge.logo img{width:100%;height:100%;display:block;filter:drop-shadow(0 2px 10px rgba(var(--ember-rgb),.35));
+  transition:transform .5s cubic-bezier(.2,.7,.2,1)}
+.nav-brand:hover .nav-badge.logo img{transform:rotate(-8deg) scale(1.06)}
 .nav-title{font-weight:800;font-size:13.5px;letter-spacing:.18em;line-height:1.15;white-space:nowrap}
 .nav-title small{display:block;font-weight:600;font-size:9.5px;letter-spacing:.1em;color:var(--muted)}
 .nav-links{display:flex;gap:2px;margin-left:6px}
@@ -255,15 +318,14 @@ body.page-company{padding-top:64px}
 
 /* ---------- landing page: hero overlay + scroll sections ---------- */
 html{scroll-behavior:smooth}
-/* the scroll runway: the hero pins (sticky) inside this taller wrapper, so
-   the first stretch of scrolling keeps the district pinned on screen while
-   city.js choreographs the 3D → page transition. The extra height is set in
-   JS; without JS — or under prefers-reduced-motion — the wrapper collapses
-   to the hero alone and the page behaves exactly as it did before */
+/* the sky pass runway: the hero pins (sticky) inside this taller wrapper
+   for about one screen of scrolling while city.js flies the camera up into
+   the clouds. Its extra height is set in JS; without JS — or under
+   prefers-reduced-motion — it collapses to the hero alone. */
 .hero-run{position:relative;margin-top:64px}
 /* the fixed navbar owns the top 64px; the hero starts under it and stops a
-   little short of the fold, so the first band of the page always peeks in —
-   the 3D view is the hero of a page, not the whole of it */
+   little short of the fold — the 3D view is the hero of a page, not the
+   whole of it */
 header.hero{position:sticky;top:64px;height:calc(100vh - 64px - 44px);min-height:560px;overflow:hidden;border-radius:0;padding:0;margin-top:0}
 /* svh tracks the visible viewport, so the canvas does not jump as mobile
    browser chrome slides in and out */
@@ -274,44 +336,50 @@ section[id]{scroll-margin-top:78px}
    the map and two fingers pinch-zoom it (see initInteraction in city.js) */
 #scene,#scene canvas{touch-action:pan-y}
 
-/* ---------- scroll cinema: the pinned 3D → page transition ----------
-   city.js eases a --sp progress variable from 0 → 1 while the hero is
-   pinned in its runway, and the page plays its half of the transition
-   purely in CSS: the canvas dollies in a touch, the overlay parallaxes
-   away, a curtain the colour of the page rises over the district, and a
-   caption holds the middle of the runway. All clamps keep every value
-   inside [0,1] whatever the scroll position. */
-#scene{transform:scale(calc(1 + var(--sp,0) * .16));will-change:transform}
-.map-labels{opacity:calc(1 - clamp(0,(var(--sp,0) - .5) * 2.8,1))}
-.hero-curtain{position:absolute;inset:0;z-index:13;pointer-events:none;
-  opacity:clamp(0,(var(--sp,0) - .45) * 2.1,1);
-  background:
-    radial-gradient(ellipse at 50% 118%,rgba(227,189,99,.09),transparent 55%),
-    linear-gradient(180deg,rgba(2,6,20,.6) 0%,rgba(7,16,34,.78) 36%,var(--night-1) 84%)}
-.hero-caption{position:absolute;inset:0;z-index:14;display:flex;flex-direction:column;gap:12px;
-  align-items:center;justify-content:center;text-align:center;pointer-events:none;padding:0 26px;
-  transform:translate3d(0,calc(var(--sp,0) * -10vh),0);
-  opacity:calc(clamp(0,(var(--sp,0) - .16) * 4.2,1) * clamp(0,(.86 - var(--sp,0)) * 4.2,1))}
-.cap-k{font-size:11px;font-weight:800;letter-spacing:.34em;color:var(--ember-soft);text-shadow:0 2px 16px rgba(3,10,24,.9)}
-.cap-l{max-width:560px;color:#e8effc;font-size:clamp(17px,2.6vw,25px);font-weight:700;line-height:1.5;
-  text-shadow:0 4px 28px rgba(3,10,24,.92)}
-/* the HUD and the phone chips sink under the veil as the transition plays */
-header.hero .hud{opacity:calc(1 - clamp(0,(var(--sp,0) - .3) * 3,1))}
-.company-chips{opacity:calc(1 - clamp(0,(var(--sp,0) - .3) * 3,1))}
+/* ---------- the sky pass: 3D district → page ----------
+   city.js eases a --sp progress (0 → 1) across the runway and writes it on
+   the hero, while the camera tilts up off the district into the night sky.
+   The page's half is transform and opacity only:
+     0.00–0.30  the headline, name tags and controls float away
+     0.42–1.00  <main> rises from the bottom like a sheet and slides over
+                the pinned sky (plain scrolling: it lives in the same runway,
+                after a spacer sized in city.js), and the sky dims beneath it
+   After that the sky stays pinned behind the whole page: the sections are
+   translucent, so the stars, the Milky Way and the drifting clouds show
+   through while you read (city.js draws them at a third of the frame rate
+   there). No backdrop blur — blurring a live canvas every frame is what
+   makes phones stutter; the veil and the page's own tint do the softening. */
+.hero-drift{display:flex;flex-direction:column;align-items:center;
+  transform:translate3d(0,calc(var(--sp,0) * -30vh),0);opacity:calc(1 - var(--sp,0) * 3.4)}
+.map-labels{opacity:calc(1 - clamp(0,(var(--sp,0) - .06) * 4,1))}
+header.hero .hud,.company-chips,.scroll-cue:not(.gone){opacity:calc(1 - clamp(0,(var(--sp,0) - .02) * 4,1))}
+.hero-veil{position:absolute;inset:0;z-index:13;pointer-events:none;background:#02040c;
+  opacity:clamp(0,(var(--sp,0) - .4) * 1.1,.5)}
+/* the sheet: the page itself, with a rounded leading edge and a soft shadow
+   cast up onto the sky it is sliding over — tinted, not opaque, so the
+   world stays faintly there behind the words */
+.hero-run > main{position:relative;z-index:2;overflow:hidden;
+  background:linear-gradient(180deg,rgba(7,16,34,.9) 0,rgba(7,16,34,.66) 260px,rgba(7,16,34,.72));
+  border-radius:28px 28px 0 0;box-shadow:0 -24px 70px rgba(0,0,0,.55),0 -1px 0 rgba(var(--haze-rgb),.22)}
+/* a soft blend at the bottom edge, always on: the page starts where the
+   valley mist would be */
+header.hero::after{content:"";position:absolute;inset:auto 0 0 0;height:90px;z-index:12;pointer-events:none;
+  background:linear-gradient(180deg,transparent,var(--night-1))}
 .hero-overlay{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;pointer-events:none;padding:70px 20px}
-/* the overlay parallaxes away as the scroll cinema plays (no transition:
-   the --sp variable is already eased per frame in city.js, a CSS transition
-   on top would only trail behind it) */
-.hero-overlay{
-  transform:translate3d(0,calc(var(--sp,0) * -44vh),0) scale(calc(1 - var(--sp,0) * .1));
-  filter:blur(calc(var(--sp,0) * 7px));
-  opacity:calc(1 - clamp(0,(var(--sp,0) - .06) * 2.4,1))}
+/* the opening: as the loader lifts, the kicker, each word of the headline,
+   the line under it and the buttons rise into place one after another
+   (city.js marks them .w with a --d delay, then adds .play). Opacity and
+   transform only, so it stays smooth on any phone. */
+.hero-overlay.intro .w{opacity:0;transform:translate3d(0,.6em,0)}
+.hero-overlay.intro .hero-head .w{display:inline-block}
+.hero-overlay.intro.play .w{animation:word-in 1s cubic-bezier(.2,.7,.2,1) var(--d,0s) both}
+@keyframes word-in{from{opacity:0;transform:translate3d(0,.6em,0)}to{opacity:1;transform:none}}
 /* the overlay is a host: once you reach for the map it steps aside — this
    one still fades gently, its transition lives on the faded state itself */
 .hero-overlay.faded{opacity:0;visibility:hidden;transition:opacity .9s ease,visibility .9s}
 .hero-kicker{font-size:11px;font-weight:800;letter-spacing:.34em;color:#c3d8f2;text-shadow:0 2px 14px rgba(3,10,24,.85)}
-.hero-head{font-size:clamp(38px,7.2vw,76px);font-weight:800;line-height:1.02;margin:18px 0 14px;text-shadow:0 10px 40px rgba(3,10,24,.65)}
-.hero-head .grad{background:linear-gradient(90deg,var(--ember-soft),var(--ember),var(--ember-deep));-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero-head{font-family:var(--font-display);font-size:clamp(46px,8.4vw,92px);font-weight:600;line-height:.98;letter-spacing:-.005em;margin:18px 0 14px;text-shadow:0 10px 40px rgba(3,10,24,.65)}
+.hero-head .grad{font-style:italic;font-weight:500;padding-right:.08em;background:linear-gradient(90deg,var(--ember-soft),var(--ember),var(--ember-deep));-webkit-background-clip:text;background-clip:text;color:transparent}
 .hero-sub{max-width:560px;color:#e2ecfb;font-size:15.5px;line-height:1.65;text-shadow:0 2px 12px rgba(3,10,24,.85)}
 .hero-cta{display:flex;gap:12px;margin-top:26px;flex-wrap:wrap;justify-content:center}
 .hero-cta .btn{margin:0;pointer-events:auto}
@@ -339,25 +407,39 @@ header.hero .hud{opacity:calc(1 - clamp(0,(var(--sp,0) - .3) * 3,1))}
 
 main .band{max-width:1120px;margin:0 auto;padding:88px 22px}
 .band-inner{max-width:1120px;margin:0 auto}
-/* the sections rise in with a soft 3D swing as they enter the viewport —
-   cards, stats and titles each get a --i stagger index from city.js. The
-   transition lives at band specificity so a card's own shorthand
-   transition (.cl-link) cannot swallow the stagger. */
-.reveal{opacity:0;transform:perspective(1100px) translate3d(0,44px,0) rotateX(9deg);transform-origin:50% 100%}
-main .band .reveal{transition:opacity .8s cubic-bezier(.22,.61,.2,1) calc(var(--i,0) * 70ms),
-             transform .8s cubic-bezier(.22,.61,.2,1) calc(var(--i,0) * 70ms)}
+/* the sections glide up and fade in as they enter the viewport, a little
+   before they reach it, so they are settling as you arrive rather than
+   popping in behind you — cards, stats and titles each get a --i stagger
+   index from city.js. The transition lives at band specificity so a
+   card's own shorthand transition (.cl-link) cannot swallow the stagger. */
+.reveal{opacity:0;transform:translate3d(0,26px,0)}
+main .band .reveal{transition:opacity .7s cubic-bezier(.2,.7,.2,1) calc(var(--i,0) * 60ms),
+             transform .9s cubic-bezier(.2,.7,.2,1) calc(var(--i,0) * 60ms)}
 .reveal.in{opacity:1;transform:none}
 .band.alt{max-width:none;background:linear-gradient(180deg,rgba(22,32,60,.55),rgba(8,14,30,.25));border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-.sec-title{font-size:clamp(26px,4vw,38px);font-weight:800;margin:0 0 10px}
+.sec-title{font-family:var(--font-display);font-size:clamp(32px,4.8vw,48px);font-weight:600;line-height:1.05;letter-spacing:-.005em;margin:0 0 10px}
 .sec-sub{color:var(--muted);margin:0 0 8px;font-size:15px}
 .stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin:36px 0 30px}
 .stat{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px;text-align:center}
-.stat b{display:block;font-size:34px;font-weight:800;background:linear-gradient(135deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.stat b{display:block;font-size:34px;font-weight:800;font-variant-numeric:tabular-nums;background:linear-gradient(135deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent}
 .stat span{color:var(--muted);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase}
 .sec-text{color:#c9d6e8;max-width:780px;line-height:1.85;font-size:14.5px}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;margin-top:36px}
-.cl-link{display:flex;gap:14px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px;color:var(--text);transition:.22s}
-.cl-link:hover{transform:translateY(-4px);border-color:var(--accent);box-shadow:0 16px 40px rgba(2,6,18,.5)}
+.cl-link{display:flex;gap:14px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px;color:var(--text);transition:.22s;
+  position:relative;isolation:isolate;overflow:hidden}
+.cl-link:hover{transform:translateY(-4px);border-color:rgba(var(--brand-rgb,227,189,99),.7);
+  box-shadow:0 16px 40px rgba(2,6,18,.5),0 0 34px rgba(var(--brand-rgb,227,189,99),.16)}
+/* a spotlight in the company's own colour, following the cursor (city.js
+   writes --mx/--my); it sits under the content, over the card face */
+.cl-link::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;pointer-events:none;opacity:0;
+  background:radial-gradient(280px circle at var(--mx,50%) var(--my,0%),rgba(var(--brand-rgb,227,189,99),.24),transparent 70%);
+  transition:opacity .35s}
+.cl-link:hover::before{opacity:1}
+/* while the card leans toward the cursor, it follows quickly — not with the
+   slow, staggered transition it rose in with */
+main .band .cl-link.tilting{transition:transform .14s ease-out,border-color .22s,box-shadow .22s}
+.cl-go{transition:transform .3s cubic-bezier(.2,.7,.2,1)}
+.cl-link:hover .cl-go{transform:translateX(4px)}
 .cl-avatar{width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;color:#fff;flex:none}
 .cl-body{flex:1;min-width:0}
 .cl-body h3{margin:0;font-size:15.5px}
@@ -384,13 +466,14 @@ footer.site-footer nav a:hover{color:var(--accent)}
 
 /* ---------- reduced motion ---------- */
 @media (prefers-reduced-motion: reduce){
-  .loader-mark,.loader-bar i,.scroll-cue{animation:none}
+  .loader-mark,.loader-bar i,.scroll-cue,.loader-shine,.hero-grain{animation:none}
   .company-app>*{animation:none}
-  /* the scroll cinema steps aside entirely: no runway, no parallax, no veil */
-  #scene{transform:none!important}
+  /* the sky pass steps aside entirely: no runway, no veil, no sheet */
+  .hero-veil{display:none}
+  .hero-run > main{border-radius:0;box-shadow:none;background:var(--night-1)}
+  header.hero{position:relative}                 /* nothing pinned without motion */
+  .hero-drift{transform:none!important;opacity:1!important}
   .map-labels,header.hero .hud,.company-chips{opacity:1!important}
-  .hero-curtain,.hero-caption{display:none}
-  .hero-overlay{transform:none!important;filter:none!important}
   .reveal{opacity:1;transform:none}
   main .band .reveal,.reveal{transition:none}
 }
@@ -420,6 +503,8 @@ footer.site-footer nav a:hover{color:var(--accent)}
 .map-pin.off{opacity:0;pointer-events:none}
 .map-pin.hq{pointer-events:none;border-color:rgba(227,189,99,.55);padding-right:12px}
 .map-pin.hq .pin-badge{background:linear-gradient(135deg,#f0c877,#c9a44e);color:#1b1405}
+.map-pin.hq .pin-badge.logo{width:30px;height:30px;background:none}
+.map-pin .pin-badge.logo img{width:100%;height:100%;display:block}
 .map-pin.hq b{color:#ffe7b0;letter-spacing:.06em}
 
 /* ---------- phones: fly-to buttons for each company ---------- */

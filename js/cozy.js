@@ -186,7 +186,12 @@ export function addStringLights(buntingGroup, radius, y, segments, lampMats) {
   const capMat = new THREE.MeshStandardMaterial({ color: '#40372c', roughness: 0.7 });
   const bulbGeo = new THREE.SphereGeometry(0.11, 8, 6);
   const capGeo = new THREE.CylinderGeometry(0.05, 0.06, 0.09, 6);
-  const flares = [];
+  /* one glow material for every bulb: they all come on together */
+  const flareMat = new THREE.SpriteMaterial({
+    map: warmGlowTexture(), transparent: true, opacity: 0, fog: false,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  });
+  const flares = [flareMat];
 
   for (let i = 0; i < segments; i++) {
     const a0 = (i / segments) * Math.PI * 2;
@@ -205,14 +210,10 @@ export function addStringLights(buntingGroup, radius, y, segments, lampMats) {
       cap.position.set(px, py - 0.05, pz);
       buntingGroup.add(cap);
 
-      const fl = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: warmGlowTexture(), transparent: true, opacity: 0, fog: false,
-        blending: THREE.AdditiveBlending, depthWrite: false
-      }));
+      const fl = new THREE.Sprite(flareMat);
       fl.scale.setScalar(1.5);
       fl.position.set(px, py - 0.17, pz);
       buntingGroup.add(fl);
-      flares.push(fl.material);
     }
   }
   return { bulbMat, flares };

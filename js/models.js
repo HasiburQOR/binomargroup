@@ -21,8 +21,11 @@
    ============================================================= */
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
+/* the shipped files are simplified, quantised and meshopt-compressed by
+   tools/optimize-models.mjs — the untouched sources are in models-src/ */
 const DIR = 'assets/models/';
 
 /* file + the credit it must carry (CC-BY needs attribution) */
@@ -79,12 +82,35 @@ const FACING_Z = Math.PI / 2;
 
 const scenes = new Map();
 
+/* Quantised files store positions, normals and UVs as small normalised
+   integers, undone by a scale on the node. bake() moves vertices straight
+   into world space, which an Int16 array cannot hold — so every attribute
+   goes back to plain floats as the file lands. */
+function dequantize(root) {
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    const g = o.geometry;
+    for (const name of Object.keys(g.attributes)) {
+      const a = g.attributes[name];
+      if (!a.isInterleavedBufferAttribute && !a.normalized && a.array instanceof Float32Array) continue;
+      const n = a.itemSize, out = new Float32Array(a.count * n);
+      for (let i = 0; i < a.count; i++) {
+        out[i * n] = a.getX(i);
+        if (n > 1) out[i * n + 1] = a.getY(i);
+        if (n > 2) out[i * n + 2] = a.getZ(i);
+        if (n > 3) out[i * n + 3] = a.getW(i);
+      }
+      g.setAttribute(name, new THREE.BufferAttribute(out, n));
+    }
+  });
+}
+
 export async function loadModels(onProgress) {
-  const loader = new GLTFLoader();
+  const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
   const keys = Object.keys(MODELS);
   let done = 0;
   await Promise.all(keys.map((k) => loader.loadAsync(DIR + MODELS[k].file)
-    .then((gltf) => { scenes.set(k, gltf.scene); })
+    .then((gltf) => { dequantize(gltf.scene); scenes.set(k, gltf.scene); })
     .catch(() => console.warn('[binomar] ' + MODELS[k].file + ' unavailable - using the procedural stand-in'))
     .finally(() => { if (onProgress) onProgress(++done / keys.length); })));
   console.info('[binomar] 3D models: ' + [...new Set([...scenes.keys()].map((k) => MODELS[k].credit))].join(' · '));

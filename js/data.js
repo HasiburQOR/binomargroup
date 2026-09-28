@@ -24,6 +24,29 @@ export const INDUSTRY_META = {
   construction:{ label: "Construction",          color: "#d97706" }
 };
 
+/* A company's badge, wherever it appears (cards, map tags, the finder, the
+   phone chips, the tooltip): its real logo on a light tile when it has one,
+   its initial on its brand colour when it does not — or when the file fails
+   to load, so a missing logo never leaves a broken image. */
+export function fillBadge(el, c) {
+  const initial = String((c && c.name) || '?').charAt(0).toUpperCase();
+  const plain = () => {
+    el.classList.remove('has-logo');
+    el.style.background = (c && c.color) || '';
+    el.textContent = initial;
+  };
+  el.textContent = '';
+  if (!c || !c.logo) { plain(); return; }
+  const img = new Image();
+  img.alt = '';
+  img.decoding = 'async';
+  img.onerror = plain;
+  img.src = c.logo;
+  el.classList.add('has-logo');
+  el.style.background = '';
+  el.appendChild(img);
+}
+
 export function getIndustryMeta(key) {
   return INDUSTRY_META[key] ||
     { label: key ? key.charAt(0).toUpperCase() + key.slice(1) : "Group", color: "#64748b" };

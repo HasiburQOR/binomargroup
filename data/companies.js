@@ -2,6 +2,12 @@
    Local company dataset (fallback when Sanity is not configured)
    Shape mirrors the Sanity schema in sanity/schema.js —
    fields added here should be added there too.
+
+   logo: the company's own mark, shown on its card, its map tag, the
+   finder, the phone chips, the tooltip and its company page. Put the
+   file in assets/logos/ (SVG, PNG or WebP, drawn for a white background)
+   and set its path, e.g. "assets/logos/traveldoor.svg". Left "", the
+   badge shows the initial on the brand colour (see assets/logos/README.md).
    ============================================================ */
 
 window.LOCAL_COMPANIES = [
@@ -16,6 +22,7 @@ window.LOCAL_COMPANIES = [
       "With certified consultants, round-the-clock on-trip support and long-standing airline and hotel partnerships, Traveldoor turns complicated itineraries into effortless travel."
     ],
     color: "#0ea5e9",
+    logo: "",                    // e.g. "assets/logos/traveldoor.svg"
     floors: 9,
     plot: 1,
     featured: true,
@@ -36,6 +43,7 @@ window.LOCAL_COMPANIES = [
       "From cultural city breaks to incentive trips and special-interest tours, MAQ Tourism blends careful planning with room for spontaneity — the way travel should feel."
     ],
     color: "#14b8a6",
+    logo: "",                    // e.g. "assets/logos/maq-tourism.svg"
     floors: 4,
     plot: 2,
     featured: false,
@@ -56,6 +64,7 @@ window.LOCAL_COMPANIES = [
       "Local teams, transparent operations and years of on-the-ground relationships mean every group lands in expert hands — from border to toast."
     ],
     color: "#e11d48",
+    logo: "",                    // e.g. "assets/logos/hashtag-georgia.svg"
     floors: 6,
     plot: 3,
     featured: true,
@@ -76,6 +85,7 @@ window.LOCAL_COMPANIES = [
       "One desk for documents, bookings and departure-ready support — so travellers set off with confidence and everything in order."
     ],
     color: "#f97316",
+    logo: "",                    // e.g. "assets/logos/traveldoor-outbound.svg"
     floors: 5,
     plot: 4,
     featured: false,

@@ -102,6 +102,55 @@ export function batchScatter(props) {
   return out;
 }
 
+/* Bake groups that are already placed in the scene down to one mesh per
+   material across ALL of them: every street lamp on the mountain becomes
+   three meshes instead of a hundred. The meshes move into world space and
+   leave their groups; anything that is not a plain mesh (sprites, points)
+   stays where it is, and so does any mesh under a node for which `moving`
+   says true (a flag on its own pivot, say). Materials are kept, so
+   whatever animates a material — lamps coming on — still works.
+   Returns how many draw calls it saved. */
+export function bakeStatic(roots, scene, moving = (o) => !!o.userData.wind) {
+  const banks = new Map();
+  const movingUnder = (o, root) => {
+    for (let n = o; n && n !== root; n = n.parent) if (moving(n)) return true;
+    return false;
+  };
+  for (const root of roots) {
+    root.updateMatrixWorld(true);
+    root.traverse((o) => {
+      if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || Array.isArray(o.material)) return;
+      if (o.geometry.morphAttributes && Object.keys(o.geometry.morphAttributes).length) return;
+      if (movingUnder(o, root)) return;
+      const g = o.geometry;
+      const key = o.material.uuid + '|' + (g.index ? 'i' : 'n') + '|' +
+        Object.keys(g.attributes).sort().join(',') + '|' +
+        (o.castShadow ? 1 : 0) + (o.receiveShadow ? 1 : 0) + '|' + o.renderOrder;
+      if (!banks.has(key)) {
+        banks.set(key, { mat: o.material, src: [], cast: o.castShadow, recv: o.receiveShadow, order: o.renderOrder });
+      }
+      banks.get(key).src.push(o);
+    });
+  }
+  let saved = 0;
+  for (const bank of banks.values()) {
+    if (bank.src.length < 2) continue;
+    const geos = bank.src.map((o) => o.geometry.clone().applyMatrix4(o.matrixWorld));
+    let merged = null;
+    try { merged = mergeGeometries(geos); } catch (e) { merged = null; }
+    for (const g of geos) g.dispose();
+    if (!merged) continue;
+    for (const o of bank.src) o.parent.remove(o);
+    const mesh = new THREE.Mesh(merged, bank.mat);
+    mesh.castShadow = bank.cast;
+    mesh.receiveShadow = bank.recv;
+    mesh.renderOrder = bank.order;
+    scene.add(mesh);
+    saved += bank.src.length - 1;
+  }
+  return saved;
+}
+
 /* ---------- MOUNTAIN TERRAIN ------------------------------------------------
    Deterministic heightfield: a summit plateau (r≈26, h≈58), ridged slopes
    and a green valley plain beyond r≈138. The same height function places
@@ -268,11 +317,12 @@ function grassDetailTexture() {
 
 /* mountain mesh: displaced plane + baked vertex colours
    (meadow → rock on steep faces → snow dusting on ridge crests). */
-export function makeMountain(H, HC = H) {
+export function makeMountain(H, HC = H, SEG = 160) {
   /* HC is the hillside before the road bed was graded into it: slope and
      aspect are read from it, so the road's embankments grow grass like the
-     slope they were cut from instead of reading as bare rock scars */
-  const SIZE = 430, SEG = 190;
+     slope they were cut from instead of reading as bare rock scars.
+     SEG (grid cells per side) comes from the quality tier. */
+  const SIZE = 430;
   const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;

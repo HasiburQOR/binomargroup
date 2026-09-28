@@ -17,7 +17,7 @@ import {
   makeFlag, mulberry32,
   makeBaseTerrain, withPads, makeMountain, makeOuterPlain, makeDistantForest,
   roadAt, spiralRoadPoints, makeRoadRibbon, roadSurfaceTexture, getBuildingDims,
-  batchScatter, withRoadBed
+  batchScatter, withRoadBed, bakeStatic
 } from './city-build.js';
 import { makeMonument } from './monument.js';
 import { createNightSky } from './sky.js';
@@ -39,7 +39,8 @@ import {
   makeStall, makeInn, makeChapel, makeFarm, makeWatermill, makeViewpoint, makeWell
 } from './hamlet.js';
 import { detectQuality } from './quality.js';
-import { loadCompanies, getIndustryMeta } from './data.js';
+import { createAmbience } from './ambience.js';
+import { loadCompanies, getIndustryMeta, fillBadge } from './data.js';
 import {
   loadModels, bake, modelGroup, createFlora, hasFlora, updateModelWind
 } from './models.js';
@@ -76,12 +77,17 @@ const roadMats = [];
 /* mountain + outer plain + distant ranges all take the same day/night tint */
 const terrainMats = [];
 const Q = detectQuality();          // how much scene this device should draw
-/* adaptive resolution — DISABLED: PR_FLOOR = 1 locks prScale at 1, so the
-   render resolution never steps down and in-scene text stays crisp at any
-   fps. To re-enable dynamic downscaling, set PR_FLOOR back below 1 (was 0.6). */
+/* the quality governor: whatever detectQuality() guessed, the real frame
+   rate decides. Averaged over PR_WIN frames, a device that cannot hold
+   ~45 fps first sheds resolution (down to PR_FLOOR of its tier's pixel
+   ratio), then the bloom pass, then the shadows — one step at a time,
+   each given time to settle. Resolution comes back when there is headroom;
+   bloom and shadows stay off once dropped, so the view never oscillates.
+   The names on the map are HTML labels, so a softer canvas costs no text. */
 let prScale = 1;
-const PR_FLOOR = 1, PR_WIN = 40, PR_DROP = 1 / 48, PR_RISE = 1 / 58;
+const PR_FLOOR = 0.65, PR_WIN = 40, PR_DROP = 1 / 45, PR_RISE = 1 / 57;
 let ftAcc = 0, ftN = 0, prHold = 0, shadowTick = 0;
+let bloomOff = false;                // the governor gave up the bloom pass
 let hudStats = null, hudCount = 0, hudLast = 0;
 
 /* small, forgiving preference store — private mode throws on access */
@@ -91,6 +97,7 @@ function readPref(k) {
 function writePref(k, v) {
   try { localStorage.setItem('binomar.' + k, v); } catch (e) { /* private mode */ }
 }
+let ambience = null;
 let sky = null, grass = null, traffic = null, leaves = null, windmill = null, weather = null;
 let fireflies = null, birds = null, fire = null, plazaMonument = null;
 let animals = null, villagers = null, astronomer = null, waterfall = null;
@@ -102,6 +109,9 @@ const roadGlowMats = [];
 const smokeStacks = [], weatherVanes = [], marqueeMats = [], banners = [];
 let buntingFlags = [];
 const buildings = [], hitMeshes = [];
+/* placed props that never move, baked across the whole district into one
+   mesh per material once it is built (bakeStatic in city-build.js) */
+const bakeLater = [];
 let companies = [];
 let hovered = null, selected = null, needRaycast = false;
 /* the site opens at night: the lit windows, the fire, the string lights and
@@ -145,7 +155,10 @@ function initThree() {
   camera = new THREE.PerspectiveCamera(45, (wrapEl.clientWidth || 1) / (wrapEl.clientHeight || 1), 0.1, 2000);
   camera.position.set(120, 62, 268);   // above the treeline, out past the near belt
 
-  renderer = new THREE.WebGLRenderer({ antialias: Q.antialias, powerPreference: 'high-performance' });
+  /* with bloom, the scene is drawn into the composer's own (single-sample)
+     target and only the finished image reaches the canvas, so a
+     multisampled canvas would cost memory and bandwidth for nothing */
+  renderer = new THREE.WebGLRenderer({ antialias: Q.antialias && !Q.bloom, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Q.pixelRatio);
   renderer.setSize(wrapEl.clientWidth || 1, wrapEl.clientHeight || 1);
   renderer.shadowMap.enabled = Q.shadows;
@@ -184,7 +197,7 @@ function initThree() {
      district was composed around, where every name plate reads — and the
      world is already turning: one gentle lap roughly every two minutes */
   controls.autoRotate = true;              // the district is meant to feel alive
-  controls.autoRotateSpeed = 0.5;
+  controls.autoRotateSpeed = AUTO_SPIN;
   controls.enabled = true;
 
   hemi = new THREE.HemisphereLight(0xffffff, 0x5a7a4a, 0.85);
@@ -252,7 +265,7 @@ async function buildDistrict() {
   const flora = createFlora(Q.floraTris);
 
   /* the mountain itself (vertex-coloured; day/night tint via applyEnv) */
-  const mountain = makeMountain(H, HP);
+  const mountain = makeMountain(H, HP, Q.terrainSeg);
   mountainMat = mountain.material;
   scene.add(mountain);
   terrainMats.push(mountainMat);
@@ -386,6 +399,7 @@ async function buildDistrict() {
     lamp.rotation.y = -a + Math.PI;
     scene.add(lamp);
     lampMats.push(lamp.userData.bulbMat);
+    bakeLater.push(lamp);
     lamp.userData.night.forEach((m, k) => roadGlowMats.push({ m, k: lamp.userData.nightK[k], opacity: true }));
   }
 
@@ -398,6 +412,7 @@ async function buildDistrict() {
   const strings = addStringLights(bunting, 16.4, groundY + 5.1, 6, lampMats);
   for (const f of strings.flares) roadGlowMats.push({ m: f, k: 0.75, opacity: true });
   scene.add(bunting);
+  bakeLater.push(bunting);                       // the flags keep swinging (bakeStatic skips them)
   buntingFlags = bunting.userData.flags;
 
   /* a fire pit in the open quarter of the plaza — clear of the monument,
@@ -756,6 +771,7 @@ async function buildDistrict() {
     lamp.rotation.y = Math.atan2(iz, -ix);
     scene.add(lamp);
     lampMats.push(lamp.userData.bulbMat);
+    bakeLater.push(lamp);
     lamp.userData.night.forEach((m, k) => roadGlowMats.push({ m, k: lamp.userData.nightK[k], opacity: true }));
 
     const marker = new THREE.Mesh(new THREE.DodecahedronGeometry(0.28, 0), rockMat);
@@ -1068,6 +1084,19 @@ function buildUI() {
   night.textContent = envTarget > 0.5 ? '☀️' : '🌙';   // label the destination
   night.addEventListener('click', toggleNight);
   document.getElementById('btnHome').addEventListener('click', flyHome);
+
+  /* ambient sound: off until asked for (see ambience.js) */
+  const soundBtn = document.getElementById('btnSound');
+  if (soundBtn) {
+    const show = (on) => {
+      soundBtn.textContent = on ? '🔊' : '🔇';
+      soundBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      soundBtn.title = on ? 'Mute ambient sound' : 'Play ambient sound';
+    };
+    ambience = createAmbience({ onChange: show });
+    show(ambience.on);
+    soundBtn.addEventListener('click', () => ambience.toggle());
+  }
   document.getElementById('btnFull').addEventListener('click', () => {
     if (document.fullscreenElement) document.exitFullscreen();
     else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
@@ -1112,7 +1141,7 @@ function buildLabels() {
     el.style.setProperty('--brand', c.color);
     el.innerHTML = '<span class="pin-badge"></span><span class="pin-text"><b></b><small></small></span>' +
       '<span class="pin-go" aria-hidden="true">›</span>';
-    el.querySelector('.pin-badge').textContent = String(c.name || '?').charAt(0).toUpperCase();
+    fillBadge(el.querySelector('.pin-badge'), c);
     el.querySelector('b').textContent = c.name;
     el.querySelector('small').textContent = getIndustryMeta(c.industry).label;
     el.addEventListener('mouseenter', (ev) => { setHovered(b); moveTooltip(ev.clientX, ev.clientY); });
@@ -1124,7 +1153,8 @@ function buildLabels() {
   if (plazaMonument) {
     const el = document.createElement('div');
     el.className = 'map-pin hq';
-    el.innerHTML = '<span class="pin-badge">B</span><span class="pin-text"><b>BINOMAR GROUP</b><small>Global headquarters</small></span>';
+    el.innerHTML = '<span class="pin-badge logo"><img src="assets/brand/logo-128.webp" alt="" /></span>' +
+      '<span class="pin-text"><b>BINOMAR GROUP</b><small>Global headquarters</small></span>';
     layer.appendChild(el);
     const top = plazaMonument.height;
     pins.push({ el, b: null, anchor: (v) => plazaMonument.group.localToWorld(v.set(0, top + 1.5, 0)) });
@@ -1274,12 +1304,11 @@ function buildChips() {
   const bar = document.getElementById('companyChips');
   if (!bar) return;
   const chips = [];
-  const add = (label, color, initial, onTap) => {
+  const add = (label, who, onTap) => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.innerHTML = '<span class="pin-badge"></span><span></span>';
-    btn.firstChild.style.background = color;
-    btn.firstChild.textContent = initial;
+    fillBadge(btn.firstChild, who);
     btn.lastChild.textContent = label;
     btn.addEventListener('click', () => {
       for (const c of chips) c.classList.toggle('on', c === btn);
@@ -1288,10 +1317,12 @@ function buildChips() {
     bar.appendChild(btn);
     chips.push(btn);
   };
-  add('District', 'linear-gradient(135deg,#f0c877,#c9a44e)', 'B', () => { selectBuilding(null); flyHome(); });
+  add('District', { name: 'Binomar Group', color: '#e3bd63', logo: 'assets/brand/logo-128.webp' },
+    () => { selectBuilding(null); flyHome(); });
+  chips[0].firstChild.classList.add('group-mark');          // the gold monogram needs no tile
   for (const b of buildings) {
     const c = b.company;
-    add(c.name, c.color, String(c.name || '?').charAt(0).toUpperCase(), () => focusCompany(c.id));
+    add(c.name, c, () => focusCompany(c.id));
   }
 }
 
@@ -1377,8 +1408,7 @@ function renderFinderList() {
     a.href = 'company.html?id=' + encodeURIComponent(c.id);
     const dot = document.createElement('span');
     dot.className = 'dot';
-    dot.style.background = c.color;
-    dot.textContent = (c.name || '?').charAt(0).toUpperCase();
+    fillBadge(dot, c);
     const body = document.createElement('span');
     body.className = 'fi-body';
     const nm = document.createElement('span');
@@ -1418,7 +1448,7 @@ function renderFinderList() {
 function focusCompany(id, opts) {
   const b = buildings.find((x) => x.company.id === id);
   if (!b) return false;
-  if (spTarget > 0.02) scrollTo({ top: 0, behavior: 'smooth' });  // leave the cinema first
+  if (heroOut > 0.02) scrollTo({ top: 0, behavior: 'smooth' });   // bring the map into view first
   selectBuilding(b);
   const centre = new THREE.Vector3();
   b.group.getWorldPosition(centre);
@@ -1482,14 +1512,14 @@ function bindKeys() {
 function toggleNight() {
   envTarget = envTarget > 0.5 ? 0 : 1;
   document.getElementById('btnNight').textContent = envTarget > 0.5 ? '☀️' : '🌙';
+  if (heroEl) heroEl.classList.toggle('is-day', envTarget < 0.5);   // white clouds by day (style.css)
   writePref('time', envTarget > 0.5 ? 'night' : 'day');
 }
 
 /* ---------------- tooltip ---------------- */
 function populateTooltip(b) {
   const c = b.company;
-  ttAvatar.textContent = c.logo ? '' : c.name.charAt(0).toUpperCase();
-  ttAvatar.style.background = c.color;
+  fillBadge(ttAvatar, c);
   document.getElementById('ttName').textContent = c.name;
   document.getElementById('ttIndustry').textContent = getIndustryMeta(c.industry).label;
   document.getElementById('ttTagline').textContent = c.tagline || 'Part of Binomar Group';
@@ -1593,6 +1623,7 @@ function initInteraction() {
   el.addEventListener('pointerdown', (ev) => {
     down = { x: ev.clientX, y: ev.clientY, t: performance.now() };
     controls.autoRotate = false;
+    endIntro();                              // the map is theirs from the first touch
   });
 
   /* The 3D map is the hero of a page with content below it, so the wheel
@@ -1609,8 +1640,8 @@ function initInteraction() {
   wrapEl.addEventListener('wheel', (ev) => {
     const zoom = ev.ctrlKey || ev.metaKey;
     controls.enableZoom = zoom;
-    if (zoom) { controls.autoRotate = false; return; }
-    if (!hint || spSmooth > 0.05) return;    // mid-cinema the wheel is just scrolling
+    if (zoom) { controls.autoRotate = false; endIntro(); return; }
+    if (!hint || heroOut > 0.05) return;     // leaving the hero: the wheel is just scrolling
     hint.classList.add('show');
     clearTimeout(hintTimer);
     hintTimer = setTimeout(() => hint.classList.remove('show'), 1300);
@@ -1720,6 +1751,87 @@ function zoomBy(f) {
   controls.autoRotate = false;
 }
 
+/* ---------------- the opening shot ----------------
+   As the loader lifts, the camera glides down onto the overview — from
+   higher, further out and a sixth of a turn back, sweeping round the
+   summit rather than sliding in a straight line — and comes to rest
+   exactly on HOME. The auto-rotate then eases up from standstill, so the
+   landing and the slow lap join without a seam. Only the camera moves (the
+   scene is drawn every frame anyway), so it costs nothing extra on a phone.
+   Touching the map, a button or a search ends it at once. */
+const AUTO_SPIN = 0.5;                       // the overview's lap speed (controls.autoRotateSpeed)
+const INTRO = { dur: 3.2, turn: 0.55, out: 0.6, lift: 44 };
+let intro = null, spinUp = 1;
+
+function startIntro() {
+  if (Q.reducedMotion) return;
+  intro = { t: 0 };
+  controls.autoRotateSpeed = 0;
+  placeIntro(0);
+}
+
+function placeIntro(p) {
+  /* ease-out: the loader's fade covers the quick start, the eye gets the
+     long, slowing glide into place */
+  const k = 1 - Math.pow(1 - p, 3), r = 1 - k;
+  const dx = HOME.pos.x - HOME.target.x, dz = HOME.pos.z - HOME.target.z;
+  /* auto-rotate turns the azimuth downward, so the sweep does too */
+  const az = Math.atan2(dx, dz) + INTRO.turn * r;
+  const rad = Math.hypot(dx, dz) * (1 + INTRO.out * r);
+  camera.position.set(
+    HOME.target.x + Math.sin(az) * rad,
+    HOME.pos.y + INTRO.lift * r,
+    HOME.target.z + Math.cos(az) * rad);
+  controls.target.copy(HOME.target);
+  camera.lookAt(controls.target);
+}
+
+function endIntro() {
+  if (!intro) return;
+  intro = null;
+  spinUp = 0;                                // the lap eases in from here (see animate)
+}
+
+/* the headline's half of the opening: every word (and the kicker, the line
+   under it and the buttons) rises into place one after another, in CSS,
+   the moment the loader lifts. Prepared early so nothing flashes. */
+function prepareHeadline() {
+  const ov = document.getElementById('heroOverlay');
+  const head = ov && ov.querySelector('.hero-head');
+  if (!ov || !head || Q.reducedMotion) return;
+  let d = 0.35;
+  const cue = (el, gap) => { el.classList.add('w'); el.style.setProperty('--d', d.toFixed(2) + 's'); d += gap; };
+  cue(ov.querySelector('.hero-kicker'), 0.2);
+  for (const node of [...head.childNodes]) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const frag = document.createDocumentFragment();
+      for (const part of node.textContent.split(/(\s+)/)) {
+        if (!part) continue;
+        if (/^\s+$/.test(part)) { frag.appendChild(document.createTextNode(part)); continue; }
+        const span = document.createElement('span');
+        span.textContent = part;
+        cue(span, 0.09);
+        frag.appendChild(span);
+      }
+      head.replaceChild(frag, node);
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      cue(node, 0.09);                         // "after dark" keeps one gradient
+    }
+  }
+  d += 0.1;
+  cue(ov.querySelector('.hero-sub'), 0.14);
+  cue(ov.querySelector('.hero-cta'), 0);
+  ov.classList.add('intro');
+}
+
+function playHeadline() {
+  const ov = document.getElementById('heroOverlay');
+  if (ov) ov.classList.add('play');
+  /* the overlay's own "step aside after a while" countdown starts now,
+     not while the loader was still up (see index.html) */
+  dispatchEvent(new Event('binomar:intro'));
+}
+
 function flyHome() {
   camTween = { t: 0, dur: 1.3, fromP: camera.position.clone(), fromT: controls.target.clone() };
   controls.autoRotate = true;              // the overview is meant to keep turning
@@ -1736,48 +1848,84 @@ function onResize() {
   if (composer) composer.setSize(w, h);
 }
 
-/* ---------------- scroll cinema: the 3D → page transition ----------------
-   The hero is pinned (sticky) inside a taller .hero-run runway (HTML/CSS),
-   so the first ~1.6 screens of scrolling keep the district on screen while
-   this module choreographs a camera crane-up and a slow orbit sweep. The
-   eased progress spSmooth drives three things at once: the camera path
-   below, the fog, and a --sp CSS variable the page uses to parallax the
-   overlay, veil the canvas and fly the content sections in. */
-let spTarget = 0, spSmooth = 0, cineOn = false, cineOK = false, lastSpSent = -1;
-let cineFrom = null;                          // the user's view when the cinema engages
-const cinePos = new THREE.Vector3(), cineTgt = new THREE.Vector3();
+/* ---------------- the sky pass: 3D district → page ----------------
+   The hero pins inside the #heroRun runway while the camera rolls its gaze
+   up off the district into the night sky — the moon, the Milky Way, the
+   silvered clouds overhead — and then <main> rises from the bottom like a
+   sheet and slides over the pinned sky (style.css). The raw scroll share
+   (skyTarget) is eased into skySmooth every frame; it drives the camera
+   and the --sp variable the CSS reads. Scrolling back up plays it in
+   reverse and hands the camera back exactly where the visitor left it. */
+let heroOut = 0;                              // how far the visitor has left the map, 0..1
+let skyOK = false, skyTarget = 0, skySmooth = 0, skyOn = false, skyFrom = null, lastSpSent = -1;
+let sheetUp = false;                          // the page covers the hero: the sky is a backdrop
+let underTick = 0, underAcc = 0;             // the backdrop's reduced frame rate (animate)
+const heroEl = document.getElementById('hero');
+const skyPos = new THREE.Vector3(), skyTgt = new THREE.Vector3();
 const smoothstep = (x) => x * x * (3 - 2 * x);
 
-function scrollCine(sp) {
-  const e = smoothstep(sp);                   // scroll-scrubbed, but eased
+function skyPass(sp) {
+  /* the tilt is done by the time the page starts rising (~42 %); after
+     that the camera only drifts on, so the sky under the sheet is alive */
+  const e = smoothstep(Math.min(1, sp / 0.5));
+  const drift = Math.max(0, sp - 0.5);
   const dx = HOME.pos.x - HOME.target.x, dz = HOME.pos.z - HOME.target.z;
-  const az = Math.atan2(dx, dz) + 1.05 * e;   // a slow orbit sweep around the summit
-  const rad = Math.hypot(dx, dz) * (1 + 1.15 * e);   // dolly out as it goes
-  const y = HOME.pos.y + 118 * Math.pow(e, 1.55);    // crane up, late and gentle
-  cineTgt.set(
-    THREE.MathUtils.lerp(HOME.target.x, 0, e),
-    THREE.MathUtils.lerp(HOME.target.y, 14, e),      // end looking down the mountain
-    THREE.MathUtils.lerp(HOME.target.z, 0, e));
-  cinePos.set(Math.sin(az) * rad, y, Math.cos(az) * rad);
+  const az = Math.atan2(dx, dz) - 0.3 * e - 0.25 * drift;  // a slow bank, the way the lap turns
+  const rad = Math.hypot(dx, dz) * (1 + 0.12 * e);
+  skyPos.set(
+    HOME.target.x + Math.sin(az) * rad,
+    HOME.pos.y + 22 * e,                             // a little lift, still under the cloud deck
+    HOME.target.z + Math.cos(az) * rad);
+  /* the gaze rolls up from the plaza to high over the summit — about 70°
+     above the horizon, where the stars and the Milky Way are */
+  skyTgt.set(HOME.target.x, HOME.target.y + 480 * Math.pow(e, 1.15), HOME.target.z);
   const w = wrapEl.clientWidth || 1, h = wrapEl.clientHeight || 1;
   const baseFov = (w < 760 || w / h < 0.9) ? 55 : 45; // mirrors frameForViewport
-  let fov = baseFov - 11 * e * e;             // the lens compresses the exit
-  if (cineFrom) {
-    /* blend from whatever view the user had orbiting, so engaging the cinema
-       never snaps: the first 30% of the runway morphs their view onto the path */
-    const k = smoothstep(Math.min(1, sp / 0.3));
-    camera.position.lerpVectors(cineFrom.p, cinePos, k);
-    controls.target.lerpVectors(cineFrom.t, cineTgt, k);
-    fov = THREE.MathUtils.lerp(cineFrom.f, fov, k);
+  let fov = baseFov + 12 * e;                        // the sky opens up as the gaze lifts
+  if (skyFrom) {
+    /* blend from whatever view the visitor had, so taking the camera never
+       snaps: the first quarter of the runway morphs their view onto the path */
+    const k = smoothstep(Math.min(1, sp / 0.25));
+    camera.position.lerpVectors(skyFrom.p, skyPos, k);
+    controls.target.lerpVectors(skyFrom.t, skyTgt, k);
+    fov = THREE.MathUtils.lerp(skyFrom.f, fov, k);
   } else {
-    camera.position.copy(cinePos);
-    controls.target.copy(cineTgt);
+    camera.position.copy(skyPos);
+    controls.target.copy(skyTgt);
   }
   camera.fov = fov;
   camera.lookAt(controls.target);
   camera.updateProjectionMatrix();
-  scene.fog.near = 150 - 20 * e;              // the valley mists over as you leave
-  scene.fog.far = 780 - 250 * e;
+}
+
+/* called once a frame from animate(): ease the progress, take or return
+   the camera, and publish --sp for the CSS half. Returns true while the
+   sky pass owns the camera. */
+function updateSkyPass(dt) {
+  if (!skyOK) return false;
+  skySmooth += (skyTarget - skySmooth) * Math.min(1, dt * 7);
+  if (Math.abs(skyTarget - skySmooth) < 0.0004) skySmooth = skyTarget;
+  const wasOn = skyOn;
+  skyOn = skySmooth > 0.0015;
+  if (skyOn && !wasOn) {                      // engage: the climb takes the camera
+    endIntro();
+    camTween = null; zoomTween = null;
+    controls.enabled = false;
+    skyFrom = { p: camera.position.clone(), t: controls.target.clone(), f: camera.fov };
+  }
+  if (!skyOn && wasOn) {                      // back at the top: hand it back as it was
+    camera.position.copy(skyFrom.p);
+    controls.target.copy(skyFrom.t);
+    camera.fov = skyFrom.f;
+    camera.updateProjectionMatrix();
+    controls.enabled = true;
+    skyFrom = null;
+  }
+  if (heroEl && Math.abs(skySmooth - lastSpSent) > 0.0005) {
+    lastSpSent = skySmooth;
+    heroEl.style.setProperty('--sp', skySmooth.toFixed(4));
+  }
+  return skyOn;
 }
 
 /* the sections below the hero rise in with a soft 3D swing, staggered by
@@ -1792,37 +1940,90 @@ function markReveals() {
   if (!window.IntersectionObserver) { els.forEach((el) => el.classList.add('in')); return; }
   const io = new IntersectionObserver((entries) => {
     for (const en of entries) if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
-  }, { threshold: 0.15 });
+  }, { threshold: 0.05, rootMargin: '0px 0px -6% 0px' });
   els.forEach((el) => io.observe(el));
 }
 
-function initScrollCinema() {
+function initSkyPass() {
   const run = document.getElementById('heroRun');
-  const hero = document.querySelector('header.hero');
-  if (!run || !hero) return;
   const motion = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!run || !heroEl) { markReveals(); return; }
 
-  /* the runway: the hero's own height plus the scroll distance the cinema
-     should take — a little shorter on phones, none at all without motion */
+  /* the runway holds the pinned hero, a spacer and the page itself, so the
+     sky stays pinned behind the page for the whole read. The pass takes
+     `pass` px of scrolling — the tilt, then the page rising a full screen
+     over the sky — a little less on phones. The spacer is what makes the
+     page arrive at the bottom of the screen part-way through and meet the
+     navbar exactly at the end of the pass. Without motion: no spacer, and
+     the page simply follows the hero. */
+  const page = run.querySelector('main');
+  const spacer = run.querySelector('.sky-spacer');
+  let pass = 0;
   const sizeRunway = () => {
-    run.style.height = motion
-      ? Math.round(hero.offsetHeight + innerHeight * (innerWidth < 760 ? 1.05 : 1.6)) + 'px'
-      : '';
+    pass = motion ? Math.round(innerHeight * (innerWidth < 760 ? 1.35 : 1.6)) : 0;
+    if (spacer) spacer.style.height = motion ? Math.max(0, pass - heroEl.offsetHeight) + 'px' : '0px';
+    if (page) page.style.marginTop = motion && spacer ? '' : '0px';
   };
   sizeRunway();
 
+  const measure = () => {
+    const total = pass || heroEl.offsetHeight || 1;
+    heroOut = Math.min(1, Math.max(0, scrollY / total));
+    if (motion) skyTarget = heroOut;
+    sheetUp = !!page && page.getBoundingClientRect().top <= heroEl.getBoundingClientRect().top + 2;
+  };
+  addEventListener('scroll', measure, { passive: true });
+  addEventListener('resize', () => { sizeRunway(); measure(); });
+  measure();
   if (motion) {
-    cineOK = true;
-    const measure = () => {
-      const total = run.offsetHeight - hero.offsetHeight;   // scroll px while pinned
-      spTarget = total > 4 ? Math.min(1, Math.max(0, scrollY / total)) : 0;
-    };
-    addEventListener('scroll', measure, { passive: true });
-    addEventListener('resize', () => { sizeRunway(); measure(); });
-    measure();
-    spSmooth = spTarget;                    // a reload mid-page must not replay it
+    skyOK = true;
+    skySmooth = skyTarget;                    // a reload mid-page must not replay it
   }
   markReveals();
+}
+
+/* ---------------- the quality governor (see PR_* above) ----------------
+   A raw delta over 0.25 s means the tab was hidden or the page paused, not
+   that the device is slow, so that sample is dropped; the first seconds are
+   skipped too, while shaders are still compiling. */
+function setResolution(s) {
+  prScale = s;
+  renderer.setPixelRatio(Q.pixelRatio * prScale);
+  if (composer) composer.setPixelRatio(Q.pixelRatio * prScale);
+}
+
+function dropShadows() {
+  sun.castShadow = false;
+  renderer.shadowMap.enabled = false;
+  /* every lit material bakes the shadow count into its shader: rebuild */
+  scene.traverse((o) => {
+    if (!o.material) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.needsUpdate = true;
+  });
+}
+
+function governQuality(rawDt, t) {
+  if (t < 3 || rawDt >= 0.25) { ftAcc = ftN = 0; return; }
+  ftAcc += rawDt; ftN++;
+  if (prHold > 0) { prHold--; return; }
+  if (ftN < PR_WIN) return;
+  const avg = ftAcc / ftN;
+  ftAcc = ftN = 0;
+  if (avg > PR_DROP) {
+    if (prScale > PR_FLOOR) {
+      setResolution(Math.max(PR_FLOOR, prScale - 0.12));
+      prHold = 90;                                 // let the new setting settle
+    } else if (composer && !bloomOff) {
+      bloomOff = true;
+      prHold = 120;
+    } else if (renderer.shadowMap.enabled) {
+      dropShadows();
+      prHold = 120;
+    }
+  } else if (avg < PR_RISE && prScale < 1) {
+    setResolution(Math.min(1, prScale + 0.08));
+    prHold = 240;
+  }
 }
 
 /* ---------------- main loop ---------------- */
@@ -1832,59 +2033,50 @@ const easeOutCubic = (x) => 1 - Math.pow(1 - x, 3);
 function animate() {
   requestAnimationFrame(animate);
   const rawDt = clock.getDelta();
-  const dt = Math.min(rawDt, 0.05);
+  let dt = Math.min(rawDt, 0.05);
   const t = clock.elapsedTime;
+  /* the soundscape follows the view: night or day, how close the camera is
+     to the plaza, how far into the sky pass — quieter behind the page, and
+     silent when the map is out of sight */
+  if (ambience) {
+    ambience.update(dt, t, {
+      night: envMix,
+      near: Math.min(1, Math.max(0, (190 - camera.position.distanceTo(HOME.target)) / 150)),
+      sky: skyOn ? Math.min(1, skySmooth / 0.6) : 0,
+      visible: heroVisible,
+      under: sheetUp
+    });
+  }
   if (!heroVisible) return; // hero scrolled away — pause rendering, save GPU
 
-  /* scroll cinema progress: eased toward the runway position every frame, so
-     the scrub feels buttery however the wheel or the scrollbar jumps */
-  if (cineOK) {
-    spSmooth += (spTarget - spSmooth) * Math.min(1, dt * 6);
-    if (Math.abs(spTarget - spSmooth) < 0.0004) spSmooth = spTarget;
-    const wasOn = cineOn;
-    cineOn = spSmooth > 0.0015;
-    if (cineOn && !wasOn) {                   // engage: the camera path takes over
-      camTween = null; zoomTween = null;
-      controls.enabled = false;
-      cineFrom = { p: camera.position.clone(), t: controls.target.clone(), f: camera.fov };
-    }
-    if (!cineOn && wasOn) {                   // disengage: hand the camera back
-      controls.enabled = true;
-      cineFrom = null;
-      scene.fog.near = 150; scene.fog.far = 780;
-    }
-    if (Math.abs(spSmooth - lastSpSent) > 0.0005) {
-      lastSpSent = spSmooth;
-      document.documentElement.style.setProperty('--sp', spSmooth.toFixed(4));
-    }
+  /* behind the page the sky is a backdrop seen through translucent
+     sections: a third of the frames is plenty for drifting stars and
+     clouds, and the time of the skipped ones is carried into the next */
+  if (sheetUp) {
+    underAcc += rawDt;
+    if (++underTick % 3) return;
+    dt = Math.min(underAcc, 0.1);
+    underAcc = 0;
+  } else {
+    underAcc = 0;
+    governQuality(rawDt, t);
   }
 
-  /* adaptive resolution: average the real frame times, then step the pixel
-     ratio down when we can't hold ~48 fps and back up when we can. A raw
-     delta over 0.25 s just means we resumed from a paused/hidden tab —
-     drop the sample instead of letting the spike trigger a downgrade. */
-  if (rawDt < 0.25) { ftAcc += rawDt; ftN++; } else { ftAcc = ftN = 0; }
-  if (prHold > 0) prHold--;
-  else if (ftN >= PR_WIN) {
-    const avg = ftAcc / ftN;
-    if (avg > PR_DROP && prScale > PR_FLOOR) {
-      prScale = Math.max(PR_FLOOR, prScale - 0.15);
-      renderer.setPixelRatio(Q.pixelRatio * prScale);
-      if (composer) composer.setPixelRatio(Q.pixelRatio * prScale);
-      prHold = 120;                            // let the new setting settle
-    } else if (avg < PR_RISE && prScale < 1) {
-      prScale = Math.min(1, prScale + 0.1);
-      renderer.setPixelRatio(Q.pixelRatio * prScale);
-      if (composer) composer.setPixelRatio(Q.pixelRatio * prScale);
-      prHold = 240;
-    }
-    ftAcc = ftN = 0;
-  }
-
-  /* shadow cadence — the map rebuilds every other frame (see initThree) */
+  /* shadow cadence — the map rebuilds every other frame (see initThree);
+     looking up at the sky from behind the page, not at all */
   if (Q.shadows) {
     shadowTick = (shadowTick + 1) % 2;
-    renderer.shadowMap.needsUpdate = shadowTick === 0;
+    renderer.shadowMap.needsUpdate = shadowTick === 0 && !sheetUp;
+  }
+
+  const skyCam = updateSkyPass(dt);
+
+  /* any other camera move (a dive, a search, the zoom buttons) ends the
+     opening shot for good; once it has landed, the lap eases in */
+  if (intro && (flight || camTween || zoomTween)) endIntro();
+  if (spinUp < 1) {
+    spinUp = Math.min(1, spinUp + dt / 1.8);
+    controls.autoRotateSpeed = AUTO_SPIN * spinUp * spinUp * (3 - 2 * spinUp);
   }
 
   /* camera flights (company dive + home reset); controls take over in between */
@@ -1906,10 +2098,13 @@ function animate() {
       location.href = href;
       return;
     }
-  } else if (cineOn) {
-    /* the scroll cinema owns the camera while the hero is pinned (see
-       initScrollCinema); controls and tweens resume the moment it lets go */
-    scrollCine(spSmooth);
+  } else if (skyCam) {
+    skyPass(skySmooth);                       // the climb owns the camera (see initSkyPass)
+  } else if (intro) {
+    intro.t += dt;
+    const p = Math.min(1, intro.t / INTRO.dur);
+    placeIntro(p);
+    if (p >= 1) endIntro();
   } else if (camTween) {
     camTween.t += dt;
     const p = easeOutCubic(Math.min(1, camTween.t / camTween.dur));
@@ -1971,7 +2166,7 @@ function animate() {
   if (windmill) windmill.userData.hub.rotation.z -= dt * (0.35 + gust * 0.75);
   if (millWheel) millWheel.rotation.z -= dt * 0.55;      // the stream never stops
   if (traffic) traffic.update(dt, envMix);
-  if (weather) weather.update(dt, t, gust, envMix);
+  if (weather) weather.update(dt, t, gust, envMix, skyOn ? Math.min(1, skySmooth / 0.4) : 0);
   if (fireflies) fireflies.update(t, envMix);
   if (birds) birds.update(dt, t, envMix);
   if (animals) animals.update(dt, t);
@@ -2054,12 +2249,15 @@ function animate() {
     const span = t - hudLast;
     if (span >= 0.5 && span < 1.5) {
       hudStats.textContent =
-        Math.round(hudCount / span) + ' fps · ' + Math.round(prScale * 100) + '% res';
+        Math.round(hudCount / span) + ' fps · ' + Math.round(prScale * 100) + '% res · ' + Q.tier +
+        (bloomOff ? ' · no bloom' : '') + (Q.shadows && !renderer.shadowMap.enabled ? ' · no shadows' : '');
       hudCount = 0; hudLast = t;
     } else if (span >= 1.5) { hudCount = 0; hudLast = t; }   // resumed from a pause
   }
 
-  if (composer) composer.render();
+  /* the bloom pass only earns its cost after dark: by day it is a whisper
+     (applyEnv), so the frame goes straight to the canvas instead */
+  if (composer && !bloomOff && envMix > 0.15) composer.render();
   else renderer.render(scene, camera);
 }
 
@@ -2082,6 +2280,8 @@ let loadStep = 0;
 function loadProgress(pct, label) {
   const bar = document.querySelector('.loader-bar i');
   const sub = document.querySelector('.loader-sub');
+  const loader = document.getElementById('loader');
+  if (loader) loader.style.setProperty('--p', pct.toFixed(3));   // the monogram draws this far round
   if (bar) { bar.style.animation = 'none'; bar.style.width = Math.round(pct * 100) + '%'; }
   if (sub && label) sub.textContent = label;
 }
@@ -2112,8 +2312,10 @@ function renderLanding() {
     grid.innerHTML = companies.map((c) => {
       const meta = getIndustryMeta(c.industry);
       const nm = String(c.name || '?');
-      return '<a class="cl-link" href="company.html?id=' + encodeURIComponent(c.id) + '">' +
-        '<span class="cl-avatar" style="background:' + c.color + '">' + nm.charAt(0).toUpperCase() + '</span>' +
+      const rgb = new THREE.Color(c.color || '#e3bd63');
+      const brand = [rgb.r, rgb.g, rgb.b].map((v) => Math.round(v * 255)).join(',');
+      return '<a class="cl-link" style="--brand-rgb:' + brand + '" href="company.html?id=' + encodeURIComponent(c.id) + '">' +
+        '<span class="cl-avatar" data-id="' + encodeURIComponent(c.id) + '"></span>' +
         '<span class="cl-body"><h3>' + nm + '</h3>' +
         '<p>' + String(c.tagline || '') + '</p>' +
         '<span class="cl-ind" style="color:' + meta.color + '">' + meta.label + '</span></span>' +
@@ -2125,17 +2327,110 @@ function renderLanding() {
     const industries = new Set(companies.map((c) => c.industry)).size;
     const years = companies.map((c) => Number(c.founded)).filter(Number.isFinite);
     const founded = years.length ? Math.min(...years) : null;
+    /* numbers carry data-to (and a data-from) so they can count up */
+    const num = (n, from) => '<b data-to="' + n + '" data-from="' + from + '">' + n + '</b>';
     stats.innerHTML =
-      '<div class="stat"><b>' + companies.length + '</b><span>Companies</span></div>' +
-      '<div class="stat"><b>' + industries + '</b><span>Industries</span></div>' +
-      '<div class="stat"><b>' + (founded || '—') + '</b><span>Established</span></div>' +
+      '<div class="stat">' + num(companies.length, 0) + '<span>Companies</span></div>' +
+      '<div class="stat">' + num(industries, 0) + '<span>Industries</span></div>' +
+      '<div class="stat">' + (founded ? num(founded, founded - 24) : '<b>—</b>') + '<span>Established</span></div>' +
       '<div class="stat"><b>3D</b><span>Living district</span></div>';
   }
+  if (grid) {
+    for (const el of grid.querySelectorAll('.cl-avatar')) {
+      fillBadge(el, companies.find((c) => encodeURIComponent(c.id) === el.dataset.id));
+    }
+  }
+  initCardPolish(grid, stats);
+}
+
+/* ---------------- the navbar follows the reader ----------------
+   Over the district the bar stays light so the sky shows through; once the
+   page has slid over it, it turns to frosted glass. Its links light up for
+   the section actually on screen. */
+function initNavState() {
+  const nav = document.querySelector('.navbar');
+  const links = [...document.querySelectorAll('.nav-links a[href^="#"]')];
+  const sections = links.map((a) => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+  if (!nav) return;
+  nav.classList.add('live');
+  let queued = false;
+  const update = () => {
+    queued = false;
+    nav.classList.toggle('past', heroOut > 0.98);
+    let on = links[0];
+    for (let i = 1; i < sections.length; i++) {
+      if (sections[i].getBoundingClientRect().top < innerHeight * 0.45) on = links[i];
+    }
+    for (const a of links) a.classList.toggle('on', a === on);
+  };
+  addEventListener('scroll', () => { if (!queued) { queued = true; requestAnimationFrame(update); } }, { passive: true });
+  update();
+}
+
+/* ---------------- polish for the sections below the hero ----------------
+   Cards: a spotlight in the company's own colour follows the cursor across
+   the card, and on a mouse the card leans a few degrees toward it. Stats:
+   the numbers count up the first time they come into view. All of it is
+   transform, opacity and two custom properties per card. */
+function initCardPolish(grid, stats) {
+  const motion = !Q.reducedMotion;
+  const finePointer = matchMedia('(hover: hover) and (pointer: fine)').matches;
+
+  if (grid && finePointer) {
+    let card = null, raf = 0, px = 0, py = 0;
+    const paint = () => {
+      raf = 0;
+      if (!card) return;
+      const r = card.getBoundingClientRect();
+      const x = (px - r.left) / r.width, y = (py - r.top) / r.height;
+      card.style.setProperty('--mx', (x * 100).toFixed(1) + '%');
+      card.style.setProperty('--my', (y * 100).toFixed(1) + '%');
+      if (motion) {
+        card.style.transform = 'perspective(900px) translateY(-4px) rotateX(' +
+          ((0.5 - y) * 7).toFixed(2) + 'deg) rotateY(' + ((x - 0.5) * 9).toFixed(2) + 'deg)';
+      }
+    };
+    grid.addEventListener('pointermove', (ev) => {
+      const c = ev.target.closest('.cl-link');
+      if (c !== card) {
+        if (card) { card.classList.remove('tilting'); card.style.transform = ''; }
+        card = c;
+        if (card) card.classList.add('tilting');
+      }
+      px = ev.clientX; py = ev.clientY;
+      if (!raf) raf = requestAnimationFrame(paint);
+    });
+    grid.addEventListener('pointerleave', () => {
+      if (card) { card.classList.remove('tilting'); card.style.transform = ''; }
+      card = null;
+    });
+  }
+
+  const nums = stats ? [...stats.querySelectorAll('b[data-to]')] : [];
+  if (!nums.length || !motion || !window.IntersectionObserver) return;
+  for (const b of nums) b.textContent = b.dataset.from;
+  const count = () => {
+    const t0 = performance.now(), dur = 1500;
+    const tick = (now) => {
+      const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      for (const b of nums) {
+        const from = +b.dataset.from, to = +b.dataset.to;
+        b.textContent = String(Math.round(from + (to - from) * e));
+      }
+      if (k < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  };
+  const io = new IntersectionObserver((en) => {
+    if (en.some((e) => e.isIntersecting)) { io.disconnect(); count(); }
+  }, { threshold: 0.4 });
+  io.observe(stats);
 }
 
 /* ---------------- bootstrap ---------------- */
 async function main() {
   initThree();
+  prepareHeadline();
   /* the model library downloads first: the clouds, the forest, the cars and
      the buildings are all built from it. The bar counts files as they land. */
   await loadModels((p) => loadProgress(0.02 + p * 0.22, 'Unpacking the 3D models…'));
@@ -2146,13 +2441,24 @@ async function main() {
     throw new Error('No companies found — add some in data/companies.js or check your Sanity project.');
   }
   await buildDistrict();
+  bakeStatic(bakeLater, scene);
   buildUI();
   renderLanding();
   initInteraction();
-  initScrollCinema();
+  initSkyPass();
+  initNavState();
   if (window.IntersectionObserver) {
     new IntersectionObserver((en) => { heroVisible = en[0].isIntersecting; },
       { threshold: 0.05 }).observe(wrapEl);
+  }
+  /* compile every shader now, while the loader is still up — in parallel
+     where the browser can — so the opening shot does not stutter through
+     its first second. Capped, so a slow driver can never hold the page. */
+  loadProgress(0.98, 'Lighting the lamps…');
+  if (renderer.compileAsync) {
+    try {
+      await Promise.race([renderer.compileAsync(scene, camera), new Promise((r) => setTimeout(r, 4000))]);
+    } catch (e) { /* the first frame compiles whatever is left */ }
   }
   loadProgress(1, 'Ready');
 
@@ -2166,20 +2472,33 @@ async function main() {
   controls.target.copy(HOME.target);
   controls.update();
   controls.enabled = true;
+  /* …reached by the opening glide, unless the page was reloaded scrolled
+     past the hero, where nobody would see it */
+  if (heroOut < 0.5) startIntro();
 
   window.__binomar = {                                           // handy from the console
-    scene, camera, renderer, controls, sky, THREE, quality: Q,
+    scene, camera, renderer, controls, sky, THREE, quality: Q, ambience,
     focusCompany,
     setNight: (v) => { envTarget = v; envMix = v; applyEnv(v); },
-    skipIntro: () => { camTween = null; flight = null; controls.enabled = true; }
+    skipIntro: () => { endIntro(); camTween = null; flight = null; controls.enabled = true; },
+    skyTo: (v) => { skyTarget = Math.min(1, Math.max(0, v)); }   // preview the sky pass without scrolling
   };
   animate();
 
   requestAnimationFrame(() => {
     const l = document.getElementById('loader');
+    playHeadline();
     if (!l) return;
-    l.classList.add('hide');
-    setTimeout(() => l.remove(), 800);
+    /* the iris needs the registered --iris property (style.css); anywhere
+       without it, or without motion, the loader simply fades */
+    const iris = !Q.reducedMotion && !!(window.CSS && CSS.registerProperty);
+    if (iris) {
+      l.classList.add('opening');
+      requestAnimationFrame(() => l.classList.add('hide'));
+    } else {
+      l.classList.add('hide');
+    }
+    setTimeout(() => l.remove(), 1200);
   });
 }
 

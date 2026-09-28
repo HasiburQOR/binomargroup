@@ -4,3 +4,6 @@
 node_modules
 *.log
 blender
+assets/models-src
+assets/brand-src
+tools

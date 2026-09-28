@@ -5,10 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Binomar Group — Company District · Interactive 3D Map</title>
 <meta name="description" content="Explore every company of Binomar Group on an interactive 3D map. Hover a building for a quick intro, click for full details." />
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏙️</text></svg>" />
+<link rel="icon" type="image/png" href="assets/brand/favicon-64.png" />
+<link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -17,7 +18,7 @@
      so the 3D hero below it stays clean and owns the whole viewport -->
 <nav class="navbar" aria-label="Site navigation">
   <a class="nav-brand" href="#hero">
-    <span class="nav-badge">B</span>
+    <span class="nav-badge logo"><img src="assets/brand/logo-128.webp" alt="" width="42" height="42" /></span>
     <span class="nav-title">BINOMAR GROUP<small>Company District · Interactive 3D Map</small></span>
   </a>
   <div class="nav-links">
@@ -31,30 +32,26 @@
     <button id="btnFind" class="icon-btn" title="Find a company" aria-label="Find a company"
             aria-expanded="false" aria-controls="finder">🔍</button>
     <button id="btnNight" class="icon-btn" title="Toggle day / night" aria-label="Toggle day or night">☀️</button>
+    <button id="btnSound" class="icon-btn" type="button" title="Ambient sound" aria-label="Ambient sound"
+            aria-pressed="false">🔇</button>
     <button id="btnHome" class="icon-btn" title="Reset view" aria-label="Reset view">⟳</button>
     <button id="btnFull" class="icon-btn" title="Fullscreen" aria-label="Fullscreen">⛶</button>
   </div>
 </nav>
 
-<!-- the scroll runway: the hero pins (sticky) inside this taller wrapper, so
-     the first stretch of scrolling keeps the district on screen while city.js
-     plays the 3D → page transition. Its height is set in JS; without JS or
-     with reduced motion it collapses back to a plain hero. -->
+<!-- the sky pass runway: the hero pins (sticky) inside this taller wrapper
+     while city.js tilts the camera up into the night sky, and the page
+     (<main>) rises over it like a sheet. Its height is set in JS; without JS
+     or with reduced motion it collapses back to a plain hero. -->
 <div class="hero-run" id="heroRun">
 <header class="hero" id="hero">
 <div id="scene"></div>
 <div class="vignette"></div>
+<div class="hero-grain" aria-hidden="true"></div>
 <div id="flyFade" class="fly-fade" aria-hidden="true"></div>
 
-<!-- the scroll-cinema veil: the colour of the page itself, rising over the
-     district near the end of the runway so the 3D dissolves into the site -->
-<div class="hero-curtain" aria-hidden="true"></div>
-
-<!-- a line of story held in the middle of the runway, while the camera cranes up -->
-<div class="hero-caption" aria-hidden="true">
-  <span class="cap-k">ONE GROUP · ONE MOUNTAIN</span>
-  <span class="cap-l">The district keeps its lights on while you scroll —<br>the companies are just below.</span>
-</div>
+<!-- dims the sky as the page slides up over it, for depth -->
+<div class="hero-veil" aria-hidden="true"></div>
 
 <!-- names you can always read: HTML tags that follow each rooftop at a
      fixed, legible size, whatever the distance (placed by city.js) -->
@@ -63,8 +60,14 @@
 <!-- phones: one tap flies the camera in to a company -->
 <nav id="companyChips" class="company-chips" aria-label="Fly to a company"></nav>
 
+<!-- the loader: the gold monogram draws itself round its circle as the
+     district actually loads (city.js feeds --p), a light passes over the
+     gold, and it opens like an iris onto the opening shot -->
 <div id="loader" class="loader">
-  <div class="loader-mark">🏔️</div>
+  <div class="loader-logo" aria-hidden="true">
+    <img src="assets/brand/logo.webp" alt="" width="160" height="160" />
+    <i class="loader-shine"></i>
+  </div>
   <div class="loader-title">BINOMAR GROUP</div>
   <div class="loader-sub">Lighting the lamps…</div>
   <div class="loader-bar"><i></i></div>
@@ -88,12 +91,15 @@ if (location.protocol === 'file:') {
 </script>
 
 <div class="hero-overlay" id="heroOverlay">
+  <!-- drifts away with the scroll; the outer overlay keeps its own fade -->
+  <div class="hero-drift">
   <div class="hero-kicker">BINOMAR GROUP · COMPANY DISTRICT</div>
   <h1 class="hero-head">The district <span class="grad">after dark</span></h1>
   <p class="hero-sub">Every company of the group on one living 3D map — orbit the mountain, click a building, meet the brands.</p>
   <div class="hero-cta">
     <button class="btn" id="ctaExplore" type="button">🧭 Explore the map</button>
     <a class="btn ghost2" href="#companies">Our companies</a>
+  </div>
   </div>
 </div>
 
@@ -139,10 +145,14 @@ if (location.protocol === 'file:') {
   <div id="ttCta" class="tt-cta">Click to visit →</div>
 </div>
 </header>
-</div>
 
-<!-- below the 3D hero: the companies of the district, rendered by city.js
-     from the same data the 3D buildings and the finder use -->
+<!-- the scroll the camera needs to look up into the sky before the page
+     arrives (sized in city.js) -->
+<div class="sky-spacer" aria-hidden="true"></div>
+
+<!-- the page itself, inside the same runway so the pinned sky stays behind
+     it for the whole read: the companies of the district, rendered by
+     city.js from the same data the 3D buildings and the finder use -->
 <main>
   <section class="band alt" id="companies">
     <div class="band-inner">
@@ -164,6 +174,7 @@ if (location.protocol === 'file:') {
     </div>
   </section>
 </main>
+</div>
 
 <footer class="site-footer">
   <nav>
@@ -179,7 +190,8 @@ if (location.protocol === 'file:') {
 (function () {
   var o = document.getElementById('heroOverlay');
   var go = function () { if (o) o.classList.add('faded'); };
-  setTimeout(go, 9000);
+  /* counted from the opening shot (city.js), not from the loader */
+  addEventListener('binomar:intro', function () { setTimeout(go, 9000); }, { once: true });
   var sc = document.getElementById('scene');
   if (sc) sc.addEventListener('pointerdown', go, { once: true });
   /* the navbar CTA and the hero CTA both open the finder */
@@ -200,14 +212,27 @@ if (location.protocol === 'file:') {
 
 <script src="js/config.js"></script>
 <script src="data/companies.js"></script>
+<!-- the minified build: half the bytes to download and parse -->
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js",
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
   }
 }
 </script>
+<!-- fetch the whole module graph at once instead of discovering it one
+     import at a time -->
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js" crossorigin />
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js" crossorigin />
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/meshopt_decoder.module.js" crossorigin />
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js" crossorigin />
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js" crossorigin />
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js" crossorigin />
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js" crossorigin />
+<link rel="modulepreload" href="js/models.js" />
+<link rel="modulepreload" href="js/city-build.js" />
+<link rel="modulepreload" href="js/buildings.js" />
 <script type="module" src="js/city.js"></script>
 </body>
 </html>

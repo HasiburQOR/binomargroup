@@ -306,13 +306,21 @@ export function createWeather(scene, q = {}) {
   /* moonlit, not floodlit: night clouds are dark shapes with a silver top */
   const DUSK = { top: new THREE.Color('#4b5680'), bottom: new THREE.Color('#161b33') };
   const tmpTop = new THREE.Color(), tmpBot = new THREE.Color();
+  /* the sky pass (city.js) climbs into the deck: seen from underneath, a
+     moonlit cloud is all dark belly, so as the camera rises they gather a
+     silver glow instead of hanging there as black shapes */
+  const SILVER = { top: new THREE.Color('#aab8e2'), bottom: new THREE.Color('#6d7cae') };
 
   return {
     clouds,
-    update(dt, t, gust, mix) {
+    update(dt, t, gust, mix, lift = 0) {
       const drift = 0.55 + gust * 0.7;
       tmpTop.lerpColors(DAY.top, DUSK.top, mix);
       tmpBot.lerpColors(DAY.bottom, DUSK.bottom, mix);
+      if (lift > 0) {
+        tmpTop.lerp(SILVER.top, lift * mix);
+        tmpBot.lerp(SILVER.bottom, lift * mix);
+      }
       cloudMat.color.copy(tmpTop);
       cloudMat.emissive.copy(tmpBot).multiplyScalar(0.55);
 

@@ -72,6 +72,29 @@ function beamTexture() {
 }
 
 /* a flat pool of lamplight that hugs the slope instead of hovering over it */
+/* every lamp comes on together, so they all share one glass, one flare and
+   one pool material — which is what lets bakeStatic() (city-build.js) draw
+   all the lamps on the mountain in a handful of calls */
+let _lampShared = null;
+function lampShared() {
+  if (_lampShared) return _lampShared;
+  _lampShared = {
+    glass: new THREE.MeshStandardMaterial({
+      color: '#ffe9bd', emissive: new THREE.Color('#ffce7a'), emissiveIntensity: 0,
+      roughness: 0.35, transparent: true, opacity: 0.94
+    }),
+    flare: new THREE.SpriteMaterial({
+      map: glowTexture(), transparent: true, opacity: 0, fog: false,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    }),
+    pool: new THREE.MeshBasicMaterial({
+      map: poolTexture(), transparent: true, opacity: 0,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false
+    })
+  };
+  return _lampShared;
+}
+
 function makeLightPool(radius, H, cx, cz) {
   const geo = new THREE.CircleGeometry(radius, 24);
   geo.rotateX(-Math.PI / 2);
@@ -80,11 +103,7 @@ function makeLightPool(radius, H, cx, cz) {
     pos.setY(i, H(cx + pos.getX(i), cz + pos.getZ(i)) - H(cx, cz) + 0.16);
   }
   geo.computeVertexNormals();
-  const mat = new THREE.MeshBasicMaterial({
-    map: poolTexture(), transparent: true, opacity: 0,
-    depthWrite: false, blending: THREE.AdditiveBlending, fog: false
-  });
-  const mesh = new THREE.Mesh(geo, mat);
+  const mesh = new THREE.Mesh(geo, lampShared().pool);
   mesh.renderOrder = 2;
   return mesh;
 }
@@ -117,10 +136,7 @@ export function makeStreetLamp(H, x, z, rand) {
   g.add(arm);
 
   const headX = 0.85;
-  const glassMat = new THREE.MeshStandardMaterial({
-    color: '#ffe9bd', emissive: new THREE.Color('#ffce7a'), emissiveIntensity: 0,
-    roughness: 0.35, transparent: true, opacity: 0.94
-  });
+  const glassMat = lampShared().glass;
   const shade = new THREE.Mesh(new THREE.ConeGeometry(0.46, 0.4, 8), LAMP_METAL);
   shade.position.set(headX, 5.06, 0);
   g.add(shade);
@@ -130,10 +146,7 @@ export function makeStreetLamp(H, x, z, rand) {
   g.add(glass);
   bulbMats.push(glassMat);
 
-  const flare = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: glowTexture(), transparent: true, opacity: 0, fog: false,
-    blending: THREE.AdditiveBlending, depthWrite: false
-  }));
+  const flare = new THREE.Sprite(lampShared().flare);
   flare.scale.setScalar(4.6);
   flare.position.set(headX, 4.55, 0);
   g.add(flare);

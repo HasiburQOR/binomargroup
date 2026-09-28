@@ -11,7 +11,11 @@ const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({
 }[c]));
 
 function avatarHtml(c) {
-  if (c.logo) return `<img src="${esc(c.logo)}" alt="${esc(c.name)} logo">`;
+  /* a logo that fails to load falls back to the initial, never a broken image */
+  if (c.logo) {
+    return `<img src="${esc(c.logo)}" alt="${esc(c.name)} logo" ` +
+      `onerror="this.replaceWith(document.createTextNode('${esc(c.name.charAt(0).toUpperCase())}'))">`;
+  }
   return esc(c.name.charAt(0).toUpperCase());
 }
 
