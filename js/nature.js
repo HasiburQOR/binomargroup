@@ -222,9 +222,19 @@ function tuftGeometry() {
 
 export function createGrass(scene, H, rand, opts = {}) {
   const count = opts.count || 2600;
-  const geo = tuftGeometry();
+  /* a tuft from the model library when there is one, with the same
+     sky-facing normals the procedural blades get (see tuftGeometry) */
+  let geo;
+  if (opts.geometry) {
+    geo = opts.geometry.clone();
+    const n = geo.attributes.normal;
+    for (let i = 0; i < n.count; i++) n.setXYZ(i, 0, 1, 0);
+    n.needsUpdate = true;
+  } else {
+    geo = tuftGeometry();
+  }
   const mat = new THREE.MeshStandardMaterial({
-    color: '#8fc978', roughness: 1, side: THREE.DoubleSide
+    color: '#7fbe66', roughness: 1, side: THREE.DoubleSide
   });
   const uniforms = { uTime: { value: 0 }, uGust: { value: 1 } };
   mat.onBeforeCompile = (shader) => {
@@ -268,26 +278,28 @@ export function createGrass(scene, H, rand, opts = {}) {
   while (placed < count && seeds < count) {
     seeds++;
     const a = rand() * Math.PI * 2;
-    const r = 16 + Math.pow(rand(), 0.7) * 150;
+    /* exponent > 1 biases clumps toward the centre, so the grass thickens
+       on the mountain itself instead of only on the valley plain */
+    const r = 14 + Math.pow(rand(), 1.45) * 132;
     const cx = Math.cos(a) * r, cz = Math.sin(a) * r;
-    if (steepAt(cx, cz) > 0.55) continue;                   // bare rock face
+    if (steepAt(cx, cz) > 0.85) continue;                   // bare rock face
     if (opts.reject && opts.reject(cx, cz)) continue;
 
     const clump = 6 + Math.floor(rand() * 12);
     const spread = 1.1 + rand() * 2.3;
-    const hue = 0.24 + rand() * 0.07;                       // one tone per patch
+    const hue = 0.25 + rand() * 0.06;                       // one tone per patch
     for (let i = 0; i < clump && placed < count; i++) {
       const ta = rand() * Math.PI * 2;
       const tr = Math.sqrt(rand()) * spread;
       const x = cx + Math.cos(ta) * tr, z = cz + Math.sin(ta) * tr;
-      if (steepAt(x, z) > 0.8) continue;
+      if (steepAt(x, z) > 1.0) continue;
       p.set(x, H(x, z), z);
       s.setScalar(0.7 + rand() * 0.8);
       s.y *= 0.7 + rand() * 0.75;
       q.setFromEuler(new THREE.Euler(0, rand() * Math.PI, 0));
       m.compose(p, q, s);
       mesh.setMatrixAt(placed, m);
-      col.setHSL(hue + (rand() - 0.5) * 0.03, 0.34 + rand() * 0.18, 0.38 + rand() * 0.14);
+      col.setHSL(hue + (rand() - 0.5) * 0.03, 0.46 + rand() * 0.2, 0.34 + rand() * 0.12);
       mesh.setColorAt(placed, col);
       placed++;
     }

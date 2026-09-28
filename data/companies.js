@@ -22,7 +22,7 @@ window.LOCAL_COMPANIES = [
     address: "Traveldoor Tower, Gateway Avenue, Binomar District",
     phone: "+1 (555) 010-0301",
     email: "traveldoor@binomargroup.com",
-    website: "https://www.binomargroup.com",
+    website: "https://traveldoor.ge/",
     founded: "2012"
   },
   {
@@ -42,7 +42,7 @@ window.LOCAL_COMPANIES = [
     address: "MAQ House, Experience Avenue, Binomar District",
     phone: "+1 (555) 010-0302",
     email: "maq@binomargroup.com",
-    website: "https://www.binomargroup.com",
+    website: "https://maqtourism.com/",
     founded: "2016"
   },
   {
@@ -62,7 +62,7 @@ window.LOCAL_COMPANIES = [
     address: "Georgia House, Vine Street, Binomar District",
     phone: "+995 (555) 010-0303",
     email: "georgia@binomargroup.com",
-    website: "https://www.binomargroup.com",
+    website: "https://hgeorgia.com/",
     founded: "2018"
   },
   {
@@ -82,7 +82,7 @@ window.LOCAL_COMPANIES = [
     address: "Outbound House, Gateway Avenue, Binomar District",
     phone: "+1 (555) 010-0304",
     email: "outbound@binomargroup.com",
-    website: "https://www.binomargroup.com",
+    website: "https://www.facebook.com/outboundtraveldoor",
     founded: "2020"
   }
 ];

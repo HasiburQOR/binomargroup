@@ -58,16 +58,20 @@ binomar-3d-website/
 │   ├── nature.js         ← big trees, conifers, undergrowth, instanced
 │   │                       grass, wind-blown leaves, the ridge windmill
 │   ├── monument.js       ← the plaza landmark: statue + four-faced sign
-│   ├── banner.js         ← the floating, camera-facing company name plates
+│   ├── banner.js         ← the camera-facing rooftop name signs
+│   ├── buildings.js      ← the four company building designs (models + paint + roofs)
 │   ├── clouds.js         ← billboard cumulus, cirrus veil
 │   ├── cozy.js           ← the fire pit, café string lights, fireflies
 │   ├── life.js           ← birds, deer & rabbits, villagers, astronomer
 │   ├── hamlet.js         ← market stalls, inn, chapel, farm, mill, viewpoint
 │   ├── water.js          ← the waterfall, its pool and the stream
 │   ├── quality.js        ← one place that decides how much scene to draw
+│   ├── models.js         ← the 3D model library: loads, normalises, instances
 │   ├── road.js           ← street lamps & light pools, crash barrier,
 │   │                       markings, signage and the moving traffic
 │   └── company.js        ← detail page renderer
+├── assets/models/        ← the .glb models: downloaded + the four hq-*.glb (+ CREDITS.md)
+├── blender/              ← binomar-buildings.blend: source of the hq-*.glb headquarters
 ├── data/companies.js     ← local company data (your mini-database)
 ├── sanity/schema.js      ← Sanity CMS schema + setup instructions
 └── package.json
@@ -140,14 +144,59 @@ Key fields:
   sky meet without a seam.
 - **Every name reads from every angle.** A board on a roof is invisible
   edge-on and mirrored from behind, so company names ride on sprites instead:
-  `makeFloatingBanner()` hangs a lit plate above each roof on a slim mast, and
-  because it is a sprite it turns to face the camera every frame. Whichever way
-  the visitor orbits, the name is square-on. Each plate is an illuminated destination marker: dark translucent navy, a thin
-  luminous brand keyline with a soft halo, an extruded lower edge for depth, a
-  drop shadow to lift it off the sky, and a pointer tail that meets the mast. It
-  blooms brighter under the cursor. The plaza monument keeps a built
+  `makeRoofSign()` stands a card on a low pedestal on each roof, and because
+  the card is a sprite it turns to face the camera every frame. Whichever way
+  the visitor orbits, the name is square-on. The card is quiet: dark glass, the
+  brand colour in one badge with the company initial, the name, the industry,
+  and a small round "›" that says it opens. It brightens a touch under the
+  cursor, and a soft ring in the brand colour breathes on the ground around
+  every building — the "this is clickable" cue, deliberately not flashy. The plaza monument keeps a built
   four-sided sign block — it is architecture, not a label.
-- **No two buildings alike.** `getBuildingDims()` derives width, depth, storey
+- **Headquarters modelled for the site.** The four companies' buildings are
+  original Blender models (`blender/binomar-buildings.blend`, one collection
+  per building, exported to `assets/models/hq-*.glb`): Traveldoor's stepped
+  glass tower with a lit blue fin, MAQ Tourism's planted terraces, Hashtag
+  Georgia's twin towers with a sky-bridge, and Traveldoor Outbound's
+  control-tower crown. Materials are named (`Glass_Lit`, `Brand`,
+  `Brand_Light`, `Gold`…) so the site can light the offices after dark and
+  repaint `Brand*` in any company's colour. To edit one: change it in
+  Blender, join a copy of its collection and export it as GLB (+Y up) over
+  the same file.
+- **The Binomar Group HQ is the landmark.** `hq-binomar.glb` (same Blender
+  file): a reflecting-pool plinth, a gold-columned lobby, three stepped
+  chamfered glass tiers with gold collars and warm LED corner strips, the
+  sign band (lettered at runtime from `signTexture()` onto its `Sign`
+  faces), a lantern crown ringed by gold blades and a spire with a blinking
+  beacon. Every company building's front faces it.
+- **Nothing on the road.** `roadDist()` measures the true distance to the
+  spiral and every garden path through an 8 m grid; trees, props and plots
+  use it, and the hamlet, windmill, wheel and crane sites are reserved before
+  the woods are planted. The summit plots sit in the arc the road never
+  crosses.
+- **Names you can read.** A sign in the scene shrinks with distance — from the
+  overview a rooftop name is a few pixels of texture. The names are HTML
+  labels (`buildLabels()` / `updateLabels()` in `city.js`): each frame the
+  rooftop is projected to the screen and a fixed-size tag placed on it;
+  overlapping tags lift clear and their stems grow. They are real links. The
+  HQ's sign band carries one bold line of lettering for close views.
+- **Phones zoom in for you.** A portrait screen gets a wider lens and a closer
+  seat (`frameForViewport()`), and a row of chips flies the camera to each
+  company; the pinned card then opens it.
+- **A graded road.** `withRoadBed()` cuts a road bed into the height
+  function: level across the carriageway, a steady descent along it (9 %
+  at most, never climbing back), eased into the slope as an embankment.
+  Terrain colour reads the ungraded hillside, so the banks stay grassy.
+- **Night is moonlight.** A bright silver key from the moon's side over a
+  low blue fill, a violet-indigo sky, a brighter Milky Way and aurora, and
+  bloom (desktop tiers) so windows, lamps, lanterns and the HQ's LEDs glow.
+- **Fallback: four designs, four colours.** Without the hq models,
+  `js/buildings.js` turns the two building models into four designs — a
+  stacked brick spire tower, an L-shaped brick court, a brutalist with a roof
+  garden and one with a glass penthouse — picked by `plot` so the group's
+  companies never share one, and repainted from each brand colour (the
+  brick is re-hued pixel by pixel, the concrete by part). Roof pieces are
+  placed by casting rays onto the model, so they sit on its real roofs.
+- **No two procedural buildings alike** (the fallback). `getBuildingDims()` derives width, depth, storey
   height, curtain-wall language, massing, roofline and wing from hashes of the
   company id. Layout and geometry both call it, so the terrain pads always
   match. Six ways to stack a modern block (slab, round tower, stepped
@@ -162,11 +211,20 @@ Key fields:
   reads first, its companies second.
 - **Banners that fight perspective.** A sprite shrinks as the camera pulls
   back, which is exactly wrong for a label you want readable from the
-  overview. Each frame the banner measures its distance to the camera and
-  scales up to cancel most of that out, clamped to 0.92–2.4×, so the plate
-  holds a roughly constant size on screen whether you are at the plinth or
-  out past the treeline. Heights are staggered in threes and `setLift()`
-  grows the mast with them, so no plate ends up floating off a stub.
+  overview. Each frame the sign measures its distance to the camera and
+  scales up to cancel most of that out, clamped to 0.85–1.9×. It is anchored
+  at its bottom edge, so it grows upward from its pedestal and never leaves
+  the roof.
+- **A hero, not a trap.** The map is the hero of a page with content below,
+  so the wheel scrolls the page; Ctrl/⌘ + wheel (or a trackpad pinch) and the
+  +/− buttons zoom the map. On touch, vertical swipes scroll the page,
+  sideways drags orbit and two fingers pinch-zoom. The hero stops just short
+  of the fold so the next band peeks in.
+- **Woods, not a salt-shake.** Trees grow in small single-species forests —
+  birch and broadleaf near the summit, pine on the middle slopes, maple on
+  the lower meadows — with a few specimen trees between them. A tiled
+  grass-blade texture on the terrain and clumps of meadow grass keep the
+  open slopes from reading as bare lawn.
 - **Nothing on rails.** Birds soar rather than flap to a metronome: wings
   hinge at the wrist so the tip trails the shoulder, the downstroke is fast
   and the recovery slow, and soaring birds flap only in bursts. They follow
@@ -185,9 +243,11 @@ Key fields:
   core count and pixel ratio and returns a budget — pixel ratio, shadows,
   antialiasing, and counts for grass, trees, scatter, clouds, stars, traffic,
   animals and villagers. Nothing hard-codes a count. A phone gets a smaller
-  village, not a slideshow of the big one: **~1 400 draw calls and 256 k
-  triangles on the `tiny` tier against ~2 450 and 620 k on desktop**, with
-  shadows and AA off and the pixel ratio pinned to 1.
+  village, not a slideshow of the big one: **~165 draw calls and ~520 k
+  triangles on the `tiny` tier against ~205 and ~1.4 M (shadow pass
+  included) on desktop**, with shadows and AA off and the pixel ratio
+  pinned to 1. The instanced model library traded triangles for draw calls:
+  the procedural village drew ~1 400 / ~2 450 calls.
 - **Fluency is defended at runtime, too.** The shadow map rebuilds every other
   frame (`shadowMap.autoUpdate = false` + a cadence tick — soft edges make the
   halved cost invisible), and an adaptive-resolution governor in `animate()`
@@ -229,15 +289,24 @@ Key fields:
   material with an additive pool of light on the ground beneath it.
 - **Draw-call diet.** `compactGroup()` in `city-build.js` bakes a prop's
   child meshes down to one mesh per material. Trees, lamps, fences and the
-  crash barrier all go through it — the scene draws in roughly 1 700 calls
-  instead of 2 900.
+  crash barrier all go through it — the procedural scene drew roughly 1 700
+  calls instead of 2 900; with the model library instanced it is ~205.
+- **Hand-made models, procedural fallbacks.** The trees, grass, rocks,
+  flowers, animals, cars, clouds, company buildings, crane, ferris wheel and
+  road furniture are downloaded models (`assets/models/`, credits in
+  `CREDITS.md`). `js/models.js` loads them all before the world is built and
+  `bake()` flattens each one to one geometry per material, stood on y = 0,
+  turned to face +X and scaled to the size the caller asks for — the files
+  arrive at scales from 0.8 to 490 units. Plants are baked to unit height and
+  drawn as instances, so the whole forest is a few dozen draw calls, and they
+  sway in the vertex shader off the same gust. If a file fails to load,
+  `hasModel()` says so and the old procedural builder stands in.
+  `Q.floraTris` keeps phones to the lighter tree variants.
 - **Debug hook.** `window.__binomar` exposes the scene, camera, renderer and
   `setNight(0…1)` / `skipIntro()` for poking at things from the console.
 
 ## 🎨 Ideas for the next iteration
 
-- Replace the procedural buildings with hand-modeled `.glb`
-  buildings from Blender (drop into `models/`, load with GLTFLoader)
 - Snow and rain weather modes reusing the existing gust system
 - Search box that flies the camera to a building
 - Auto "cinematic tour" button

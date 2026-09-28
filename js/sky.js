@@ -27,18 +27,21 @@ function makeSkyGradient() {
   c.width = 4; c.height = 512;
   const g = c.getContext('2d');
   const grad = g.createLinearGradient(0, 0, 0, 512);
-  grad.addColorStop(0.00, '#03050d');   // zenith — almost black
-  grad.addColorStop(0.28, '#070d22');
-  grad.addColorStop(0.52, '#0d1733');
-  grad.addColorStop(0.72, '#152244');
-  grad.addColorStop(0.88, '#1d2b4e');
-  grad.addColorStop(1.00, '#243356');   // horizon
+  /* a dark sky is what lets the lights read: near-black overhead, deep
+     navy through the middle, and only the last band above the ridge
+     lifting into indigo — the colour belongs to the windows and lamps */
+  grad.addColorStop(0.00, '#010208');   // zenith
+  grad.addColorStop(0.35, '#03061a');
+  grad.addColorStop(0.62, '#070d2a');
+  grad.addColorStop(0.82, '#0e1438');
+  grad.addColorStop(0.94, '#1a1a44');   // indigo
+  grad.addColorStop(1.00, '#241d48');   // horizon
   g.fillStyle = grad;
   g.fillRect(0, 0, 4, 512);
   /* warm sodium haze lifting off the valley */
   const haze = g.createLinearGradient(0, 400, 0, 512);
-  haze.addColorStop(0, 'rgba(120,92,58,0)');
-  haze.addColorStop(1, 'rgba(146,104,58,0.42)');
+  haze.addColorStop(0, 'rgba(150,96,70,0)');
+  haze.addColorStop(1, 'rgba(200,120,70,0.32)');
   g.fillStyle = haze;
   g.fillRect(0, 400, 4, 112);
 
@@ -65,13 +68,13 @@ function makeDaySky() {
   c.width = 4; c.height = 512;
   const g = c.getContext('2d');
   const grad = g.createLinearGradient(0, 0, 0, 512);
-  grad.addColorStop(0.00, '#3d7fc0');   // zenith
-  grad.addColorStop(0.30, '#6ca6d9');
-  grad.addColorStop(0.50, '#a8cde8');
-  grad.addColorStop(0.62, '#e8ddc8');   // the warm band a low sun leaves,
-  grad.addColorStop(0.70, '#dfdfd8');   // sitting just above the ridge line
-  grad.addColorStop(0.86, '#cfdae4');   // …and settling onto the fog colour,
-  grad.addColorStop(1.00, '#cfdae4');   // so ground and sky meet without a seam
+  grad.addColorStop(0.00, '#2f7fd4');   // zenith
+  grad.addColorStop(0.30, '#5fa8e6');
+  grad.addColorStop(0.50, '#9ed2f0');
+  grad.addColorStop(0.62, '#f0dcae');   // the warm band a low sun leaves,
+  grad.addColorStop(0.70, '#e8e2d4');   // sitting just above the ridge line
+  grad.addColorStop(0.86, '#c3d6e8');   // …and settling onto the fog colour,
+  grad.addColorStop(1.00, '#c3d6e8');   // so ground and sky meet without a seam
   g.fillStyle = grad;
   g.fillRect(0, 0, 4, 512);
 
@@ -509,47 +512,8 @@ function aimMeteor(it) {
 }
 
 /* ---------------------------------------------------------------
-   6. the moon — cratered disc, layered halo, and a tight glint.
+   6. the moon — clean disc, layered halo, and a tight glint.
    --------------------------------------------------------------- */
-function moonTexture() {
-  const px = 512;
-  const c = document.createElement('canvas'); c.width = c.height = px;
-  const g = c.getContext('2d');
-  const grad = g.createRadialGradient(px * 0.42, px * 0.4, px * 0.12, px / 2, px / 2, px * 0.52);
-  grad.addColorStop(0, '#fffdf4');
-  grad.addColorStop(0.55, '#f2ecd8');
-  grad.addColorStop(0.86, '#ded6bd');
-  grad.addColorStop(1, '#bdb49c');
-  g.fillStyle = grad;
-  g.beginPath(); g.arc(px / 2, px / 2, px / 2, 0, Math.PI * 2); g.fill();
-
-  const rand = mulberry32(4242);
-  /* maria — the big dark seas */
-  for (let i = 0; i < 7; i++) {
-    const a = rand() * Math.PI * 2, r = rand() * px * 0.3;
-    const cx = px / 2 + Math.cos(a) * r, cy = px / 2 + Math.sin(a) * r;
-    const cr = 34 + rand() * 62;
-    const mg = g.createRadialGradient(cx, cy, 0, cx, cy, cr);
-    mg.addColorStop(0, 'rgba(150,144,126,0.34)');
-    mg.addColorStop(0.7, 'rgba(158,152,132,0.20)');
-    mg.addColorStop(1, 'rgba(160,154,134,0)');
-    g.fillStyle = mg;
-    g.beginPath(); g.arc(cx, cy, cr, 0, Math.PI * 2); g.fill();
-  }
-  /* craters with a lit rim on the sun-facing side */
-  for (let i = 0; i < 48; i++) {
-    const a = rand() * Math.PI * 2, r = rand() * px * 0.4;
-    const cx = px / 2 + Math.cos(a) * r, cy = px / 2 + Math.sin(a) * r;
-    const cr = 3 + rand() * 20;
-    g.fillStyle = 'rgba(140,132,110,0.28)';
-    g.beginPath(); g.arc(cx, cy, cr, 0, Math.PI * 2); g.fill();
-    g.fillStyle = 'rgba(255,253,242,0.40)';
-    g.beginPath(); g.arc(cx - cr * 0.2, cy - cr * 0.2, cr * 0.78, 0, Math.PI * 2); g.fill();
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
 
 function radialGlowTexture(colorHex, innerStop) {
   const px = 256;
@@ -570,9 +534,16 @@ function radialGlowTexture(colorHex, innerStop) {
 
 function makeMoon() {
   const group = new THREE.Group();
+  /* clean, untextured disc: the old canvas texture painted the moon as a
+     circle inside a square canvas, and wrapping that square onto the sphere
+     folded its transparent corners over the poles and laid the gradient's
+     dark edge ring along the limb — which read as a small boxy patch in the
+     sky. A plain warm-white ball under the halo sprites is what a night
+     moon should look like. depthWrite stays off so the disc never punches
+     an invisible hole in the stars while it fades in */
   const disc = new THREE.Mesh(
     new THREE.SphereGeometry(24, 40, 28),
-    new THREE.MeshBasicMaterial({ map: moonTexture(), fog: false, transparent: true, opacity: 0 })
+    new THREE.MeshBasicMaterial({ color: '#f6f2e4', fog: false, transparent: true, opacity: 0, depthWrite: false })
   );
   group.add(disc);
 
@@ -580,8 +551,9 @@ function makeMoon() {
   disc.material.userData.k = 1;
 
   const halos = [
-    { tex: '#cfe0ff', scale: 300, k: 0.22, stop: 0.16 },
-    { tex: '#fff2d6', scale: 160, k: 0.4, stop: 0.2 },
+    { tex: '#b9ccff', scale: 380, k: 0.12, stop: 0.12 },   // the wide cold halo
+    { tex: '#cfe0ff', scale: 240, k: 0.2, stop: 0.16 },
+    { tex: '#fff2d6', scale: 130, k: 0.38, stop: 0.2 },
     { tex: '#fffaf0', scale: 84, k: 0.75, stop: 0.3 }
   ];
   for (const h of halos) {
@@ -662,9 +634,9 @@ export function createNightSky(scene, q = {}) {
       }
 
       gradient.material.opacity = mix;
-      milky.mesh.material.opacity = 0.70 * mix;
+      milky.mesh.material.opacity = 0.62 * mix;
       stars.material.uniforms.uTime.value = t;
-      stars.material.uniforms.uOpacity.value = 0.82 * mix;
+      stars.material.uniforms.uOpacity.value = 0.9 * mix;
 
       /* the whole sky turns, very slowly — one revolution ≈ 35 min */
       milky.mesh.rotation.y = MW_SPIN + t * 0.003;
@@ -672,7 +644,7 @@ export function createNightSky(scene, q = {}) {
 
       for (const a of auroras) {
         a.material.uniforms.uTime.value = t;
-        a.material.uniforms.uOpacity.value = 0.30 * mix;
+        a.material.uniforms.uOpacity.value = 0.34 * mix;
       }
 
       for (const m of moon.mats) m.opacity = mix * m.userData.k;

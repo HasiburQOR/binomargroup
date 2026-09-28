@@ -11,6 +11,7 @@
    ============================================================= */
 import * as THREE from 'three';
 import { compactGroup, mulberry32 } from './city-build.js';
+import { hasModel, modelGroup } from './models.js';
 
 /* =============================================================
    BIRDS
@@ -315,12 +316,26 @@ function makeRabbit(rand) {
   return g;
 }
 
+/* an animal from the model library: one rigid body, so it walks with a
+   gait bob and dips its nose to graze instead of moving a neck and legs */
+function modelAnimal(key, height) {
+  if (!hasModel(key)) return null;
+  return (rand) => {
+    const g = new THREE.Group();
+    const body = modelGroup(key, { facing: 'z', height });
+    g.add(body);
+    g.userData.body = body;
+    g.scale.setScalar(0.85 + rand() * 0.3);
+    return g;
+  };
+}
+
 export function createAnimals(scene, H, opts = {}) {
   const rand = mulberry32(6553);
   const ok = opts.reject || (() => false);
   const herd = [];
 
-  const spawn = (make, kind, n, rMin, rMax) => {
+  const spawn = (make, kind, n, rMin, rMax, speed, range) => {
     let placed = 0, tries = 0;
     while (placed < n && tries < n * 30) {
       tries++;
@@ -333,11 +348,11 @@ export function createAnimals(scene, H, opts = {}) {
       m.rotation.y = rand() * Math.PI * 2;
       scene.add(m);
       herd.push({
-        mesh: m, kind,
+        mesh: m, kind: m.userData.body ? 'model' : kind, range,
         home: new THREE.Vector2(x, z),
         state: 'graze', timer: 1 + rand() * 4,
         target: new THREE.Vector2(x, z),
-        speed: kind === 'deer' ? 1.5 + rand() : 2.4 + rand(),
+        speed: speed + rand(),
         phase: rand() * 6.28,
         hop: 0
       });
@@ -345,8 +360,12 @@ export function createAnimals(scene, H, opts = {}) {
     }
   };
 
-  spawn(makeDeer, 'deer', opts.deer || 9, 30, 128);
-  spawn(makeRabbit, 'rabbit', opts.rabbits || 14, 24, 120);
+  /* elk where the deer grazed, grey foxes where the rabbits sat, and a
+     small wolf pack keeping to the far slopes */
+  spawn(modelAnimal('elk', 2.3) || makeDeer, 'deer', opts.deer || 9, 30, 128, 1.5, 13);
+  spawn(modelAnimal('fox', 0.62) || makeRabbit, 'rabbit', opts.rabbits || 14, 24, 120, 2.4, 7);
+  const wolf = modelAnimal('wolf', 0.95);
+  if (wolf) spawn(wolf, 'model', Math.max(2, Math.round((opts.deer || 9) / 3)), 90, 135, 2.2, 16);
 
   const pick = (a, radius) => {
     const ang = Math.random() * Math.PI * 2;
@@ -368,7 +387,7 @@ export function createAnimals(scene, H, opts = {}) {
             an.timer = 0.8 + Math.random() * 1.6;
           } else if (an.state === 'alert') {
             an.state = 'walk';
-            an.target = pick(an.home, an.kind === 'deer' ? 13 : 7);
+            an.target = pick(an.home, an.range);
             an.timer = 2 + Math.random() * 3.5;
           } else {
             an.state = 'graze';
@@ -394,7 +413,15 @@ export function createAnimals(scene, H, opts = {}) {
 
         const ground = H(m.position.x, m.position.z);
 
-        if (an.kind === 'deer') {
+        if (an.kind === 'model') {
+          m.position.y = ground;
+          const body = m.userData.body;
+          const walking = an.state === 'walk';
+          /* a stride's rise and fall while walking; nose down to graze */
+          body.position.y = walking ? Math.abs(Math.sin(t * an.speed * 3.2 + an.phase)) * 0.06 : 0;
+          const wantPitch = an.state === 'graze' ? -0.12 : 0;
+          body.rotation.z += (wantPitch - body.rotation.z) * Math.min(1, dt * 3);
+        } else if (an.kind === 'deer') {
           m.position.y = ground;
           const walking = an.state === 'walk';
           /* head down to graze, up when alert or moving */
@@ -488,22 +515,64 @@ function makePerson(rand) {
 export function createVillagers(scene, H, opts = {}) {
   const rand = mulberry32(112358);
   const people = [];
-  const groundY = opts.groundY || 0;
   const fire = opts.fire || new THREE.Vector2(0, 0);
   const plaza = opts.plazaR || 17.5;
+  const market = opts.market || [];
   const n = opts.count || 11;
 
+  /* the middle of the market row — shoppers orbit between the stalls */
+  const marketC = market.length
+    ? market.reduce((acc, v) => acc.add(v), new THREE.Vector2()).multiplyScalar(1 / market.length)
+    : null;
+  /* one shared bearing for the gossiping pair, so they really do pair up */
+  const chatA = 1.9 + rand() * 3;
+
+  /* roles first, people second: a keeper per market stall, then a working
+     cast — browsers, kids, benchwarmers, gossips — with strollers filling
+     whatever is left of the count */
+  const cast = ['stroll', 'shopper', 'stroll', 'kid', 'sit', 'stroll', 'chat',
+    'shopper', 'stroll', 'kid', 'sit', 'stroll', 'chat'];
+  const roles = market.map(() => 'vendor').concat(cast);
+  while (roles.length < n) roles.push('stroll');
+  roles.length = n;
+
   for (let i = 0; i < n; i++) {
+    const type = roles[i];
     const p = makePerson(rand);
 
     /* day: spread around the plaza and the top of the road */
     const da = rand() * Math.PI * 2;
     const dr = 7 + rand() * (plaza - 4);
-    const day = new THREE.Vector2(Math.cos(da) * dr, Math.sin(da) * dr);
+    let day = new THREE.Vector2(Math.cos(da) * dr, Math.sin(da) * dr);
+    let faceTo = null;
 
-    /* night: most of them ring the fire, the rest stay under a lamp */
+    if (type === 'vendor' && market[i]) {
+      day = market[i].clone();                       // a pace behind the awning
+      faceTo = new THREE.Vector2(0, 0);              // watching the road
+    } else if (type === 'shopper' && marketC) {
+      day = marketC.clone().add(new THREE.Vector2(rand() - 0.5, rand() - 0.5).multiplyScalar(5));
+    } else if (type === 'kid') {
+      p.scale.multiplyScalar(0.5 + rand() * 0.08);   // half height, twice the energy
+    } else if (type === 'sit') {
+      const sa = 2.2 + i * 1.9;                      // a rim bench with a view
+      day = new THREE.Vector2(Math.cos(sa) * (plaza - 4.5), Math.sin(sa) * (plaza - 4.5));
+      faceTo = day.clone().multiplyScalar(2);        // watch the valley, not your shoes
+      for (const lb of p.userData.limbs) {           // parked on the bench
+        lb.leg.rotation.x = -1.35;
+        lb.leg.rotation.z = lb.side * 0.16;
+      }
+    } else if (type === 'chat') {
+      day = new THREE.Vector2(Math.cos(chatA) * 10 + (i % 2 ? 0.7 : -0.7),
+        Math.sin(chatA) * 10);
+      faceTo = new THREE.Vector2(day.x + (i % 2 ? -1.4 : 1.4), day.y);   // face your partner
+    }
+
+    /* night: most of them ring the fire, the rest stay under a lamp.
+       The keepers keep the night market; the elders keep their bench. */
     let night;
-    if (i < Math.round(n * 0.55)) {
+    if (type === 'vendor' || type === 'sit') {
+      night = day.clone();
+    } else if (i < Math.round(n * 0.55)) {
       const fa = (i / Math.max(1, Math.round(n * 0.55))) * Math.PI * 2 + 0.3;
       night = new THREE.Vector2(fire.x + Math.cos(fa) * 3.4, fire.y + Math.sin(fa) * 3.4);
     } else {
@@ -512,16 +581,20 @@ export function createVillagers(scene, H, opts = {}) {
     }
 
     p.position.set(day.x, H(day.x, day.y), day.y);
+    p.rotation.y = faceTo
+      ? Math.atan2(-(faceTo.y - day.y), faceTo.x - day.x)
+      : rand() * Math.PI * 2;
     scene.add(p);
     people.push({
-      mesh: p, limbs: p.userData.limbs,
+      mesh: p, limbs: p.userData.limbs, type, faceTo,
       day, night,
       wander: day.clone(),
       target: day.clone(),
-      speed: 1.5 + rand() * 0.9,
+      speed: type === 'kid' ? 2.7 + rand() * 0.7 : 1.5 + rand() * 0.9,
       pause: rand() * 6,
       phase: rand() * 6.28,
-      walking: 0
+      walking: 0,
+      yOff: type === 'sit' ? -0.34 : 0
     });
   }
 
@@ -531,49 +604,69 @@ export function createVillagers(scene, H, opts = {}) {
       const night = mix > 0.5;
       for (const v of people) {
         const m = v.mesh;
+        const anchored = !!v.faceTo && (v.type === 'vendor' || v.type === 'sit' || v.type === 'chat');
+        let moving = false;
 
-        /* pick where this person wants to be right now */
-        if (night) {
-          v.target.copy(v.night);
-        } else {
-          v.pause -= dt;
-          if (v.pause <= 0) {
-            /* stroll to a new spot near their day station */
-            const a = Math.random() * Math.PI * 2;
-            const d = Math.sqrt(Math.random()) * 6;
-            v.wander.set(v.day.x + Math.cos(a) * d, v.day.y + Math.sin(a) * d);
-            v.pause = 4 + Math.random() * 9;
+        if (anchored) {
+          /* hold your mark: turn towards it, then talk with your hands */
+          let turn = Math.atan2(-(v.faceTo.y - m.position.z), v.faceTo.x - m.position.x) - m.rotation.y;
+          while (turn > Math.PI) turn -= Math.PI * 2;
+          while (turn < -Math.PI) turn += Math.PI * 2;
+          m.rotation.y += turn * Math.min(1, dt * 3);
+          const talk = Math.sin(t * (v.type === 'chat' ? 2.6 : 1.5) + v.phase);
+          const bigness = v.type === 'chat' ? 0.5 : (v.type === 'sit' ? 0.12 : 0.22);
+          for (const lb of v.limbs) {
+            lb.arm.rotation.x = talk * bigness * lb.side;
+            lb.arm.rotation.z = Math.sin(t * 1.1 + v.phase) * 0.05;
           }
-          v.target.copy(v.wander);
-        }
+          /* a slow weight shift, so nobody is a statue */
+          m.rotation.z = Math.sin(t * 0.8 + v.phase) * 0.02;
+        } else {
+          /* pick where this person wants to be right now */
+          if (night) {
+            v.target.copy(v.night);
+          } else {
+            v.pause -= dt * (v.type === 'kid' ? 1.7 : 1);
+            if (v.pause <= 0) {
+              /* stroll to a new spot near their day station */
+              const a = Math.random() * Math.PI * 2;
+              const d = Math.sqrt(Math.random()) * (v.type === 'shopper' ? 4.5 : 6);
+              v.wander.set(v.day.x + Math.cos(a) * d, v.day.y + Math.sin(a) * d);
+              v.pause = (v.type === 'kid' ? 1.2 : 4) + Math.random() * (v.type === 'kid' ? 3 : 9);
+            }
+            v.target.copy(v.wander);
+          }
 
-        const dx = v.target.x - m.position.x, dz = v.target.y - m.position.z;
-        const d = Math.hypot(dx, dz);
-        const moving = d > 0.4;
-        if (moving) {
-          const step = Math.min(d, v.speed * dt);
-          m.position.x += (dx / d) * step;
-          m.position.z += (dz / d) * step;
-          let turn = Math.atan2(-dz, dx) - m.rotation.y;
-          while (turn > Math.PI) turn -= Math.PI * 2;
-          while (turn < -Math.PI) turn += Math.PI * 2;
-          m.rotation.y += turn * Math.min(1, dt * 6);
-        } else if (night) {
-          /* face the fire once you get there */
-          let turn = Math.atan2(-(fire.y - m.position.z), fire.x - m.position.x) - m.rotation.y;
-          while (turn > Math.PI) turn -= Math.PI * 2;
-          while (turn < -Math.PI) turn += Math.PI * 2;
-          m.rotation.y += turn * Math.min(1, dt * 2.5);
+          const dx = v.target.x - m.position.x, dz = v.target.y - m.position.z;
+          const d = Math.hypot(dx, dz);
+          moving = d > 0.4;
+          if (moving) {
+            const step = Math.min(d, v.speed * dt);
+            m.position.x += (dx / d) * step;
+            m.position.z += (dz / d) * step;
+            let turn = Math.atan2(-dz, dx) - m.rotation.y;
+            while (turn > Math.PI) turn -= Math.PI * 2;
+            while (turn < -Math.PI) turn += Math.PI * 2;
+            m.rotation.y += turn * Math.min(1, dt * 6);
+          } else if (night) {
+            /* face the fire once you get there */
+            let turn = Math.atan2(-(fire.y - m.position.z), fire.x - m.position.x) - m.rotation.y;
+            while (turn > Math.PI) turn -= Math.PI * 2;
+            while (turn < -Math.PI) turn += Math.PI * 2;
+            m.rotation.y += turn * Math.min(1, dt * 2.5);
+          }
         }
-        m.position.y = H(m.position.x, m.position.z);
+        m.position.y = H(m.position.x, m.position.z) + v.yOff;
 
         v.walking += ((moving ? 1 : 0) - v.walking) * Math.min(1, dt * 6);
-        const gait = Math.sin(t * 6.4 + v.phase) * 0.55 * v.walking;
-        for (const lb of v.limbs) {
-          lb.leg.rotation.z = gait * lb.side;
-          lb.arm.rotation.z = -gait * 0.7 * lb.side;
-          /* a little sway when standing still, so nobody is a statue */
-          lb.arm.rotation.x = Math.sin(t * 1.1 + v.phase) * 0.05 * (1 - v.walking);
+        const gait = Math.sin(t * (v.type === 'kid' ? 10 : 6.4) + v.phase) * 0.55 * v.walking;
+        if (!anchored) {
+          for (const lb of v.limbs) {
+            lb.leg.rotation.z = gait * lb.side;
+            lb.arm.rotation.z = -gait * 0.7 * lb.side;
+            /* a little sway when standing still, so nobody is a statue */
+            lb.arm.rotation.x = Math.sin(t * 1.1 + v.phase) * 0.05 * (1 - v.walking);
+          }
         }
       }
     }

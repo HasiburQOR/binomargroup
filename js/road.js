@@ -12,6 +12,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { compactGroup, mulberry32, roadAt } from './city-build.js';
+import { hasModel, modelGroup } from './models.js';
 
 /* ---------- shared textures -------------------------------------------- */
 let _glowTex = null;
@@ -565,11 +566,79 @@ function makeVehicle(rand, kind) {
   return g;
 }
 
+/* ---------- a car from the model library ---------------------------------
+   The body is the model; the lamps, beams and glow are the same rig the
+   procedural cars carry, fitted to the model's measured size, so every car
+   still lights the switchbacks after dark. Sized to the lane: a real car
+   squeezed to the road's 3 m carriageway is about 2.9 m long. */
+const CAR_MODELS = [
+  ['car-hatch', 'z'], ['car-camaro', 'x'], ['car-charger', 'z'], ['car-rx7', 'z'], ['car-aventador', 'z']
+];
+
+function makeModelVehicle(rand, i) {
+  const avail = CAR_MODELS.filter(([k]) => hasModel(k));
+  if (!avail.length) return null;
+  const [key, facing] = avail[i % avail.length];
+  const body = modelGroup(key, { facing: facing === 'z' ? 'z' : undefined, length: 2.7 + rand() * 0.4, metal: true });
+  const g = new THREE.Group();
+  g.add(body);
+  const { w: L, h: Hc, d: W } = body.userData.size;
+  const lampY = Hc * 0.42;
+
+  const headMat = new THREE.MeshStandardMaterial({
+    color: '#fff6dd', emissive: new THREE.Color('#fff1cf'), emissiveIntensity: 0
+  });
+  const tailMat = new THREE.MeshStandardMaterial({
+    color: '#b91c1c', emissive: new THREE.Color('#ff2b2b'), emissiveIntensity: 0
+  });
+  const lampGeo = new THREE.BoxGeometry(0.05, 0.1, 0.24);
+  for (const lz of [W / 2 - 0.22, -W / 2 + 0.22]) {
+    const hl = new THREE.Mesh(lampGeo, headMat);
+    hl.position.set(L / 2 + 0.01, lampY, lz);
+    g.add(hl);
+    const tl = new THREE.Mesh(lampGeo, tailMat);
+    tl.position.set(-L / 2 - 0.01, lampY, lz);
+    g.add(tl);
+  }
+
+  const beamMat = new THREE.MeshBasicMaterial({
+    map: beamTexture(), color: '#ffe6ad', transparent: true, opacity: 0, fog: false,
+    depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+  });
+  const beamGeo = new THREE.ConeGeometry(0.95, 7, 14, 1, true);
+  beamGeo.translate(0, -3.5, 0);
+  beamGeo.rotateZ(Math.PI / 2);
+  for (const lz of [W / 2 - 0.26, -W / 2 + 0.26]) {
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+    beam.position.set(L / 2 + 0.03, lampY, lz);
+    beam.rotation.z = -0.055;
+    beam.renderOrder = 3;
+    g.add(beam);
+  }
+  const glowMat = new THREE.SpriteMaterial({
+    map: glowTexture(), transparent: true, opacity: 0, fog: false,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  });
+  const glow = new THREE.Sprite(glowMat);
+  glow.scale.setScalar(2.6);
+  glow.position.set(L / 2 + 0.1, lampY, 0);
+  g.add(glow);
+
+  g.userData.night = [
+    { m: headMat, k: 2.6, prop: 'emissiveIntensity' },
+    { m: tailMat, k: 1.9, prop: 'emissiveIntensity' },
+    { m: beamMat, k: 0.5, prop: 'opacity' },
+    { m: glowMat, k: 0.85, prop: 'opacity' }
+  ];
+  g.userData.wheels = [];                     // the models' wheels are part of the body
+  return g;
+}
+
 export function createTraffic(scene, H, count = 4) {
   const rand = mulberry32(77123);
   const cars = [];
   for (let i = 0; i < count; i++) {
-    const car = makeVehicle(rand, rand() < 0.18 ? 2 : rand() < 0.4 ? 1 : 0);
+    const car = makeModelVehicle(rand, i) || makeVehicle(rand, rand() < 0.18 ? 2 : rand() < 0.4 ? 1 : 0);
     /* yaw first, then pitch about the car's own long axis — the default XYZ
        order would roll it onto its side on the steep sections */
     car.rotation.order = 'YZX';

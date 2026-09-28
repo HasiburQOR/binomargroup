@@ -7,12 +7,17 @@
    ============================================================= */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import {
   computeMountainLayout, makeBuilding, makeTree, makePine,
   makeFlag, mulberry32,
   makeBaseTerrain, withPads, makeMountain, makeOuterPlain, makeDistantForest,
   roadAt, spiralRoadPoints, makeRoadRibbon, roadSurfaceTexture, getBuildingDims,
-  batchScatter
+  batchScatter, withRoadBed
 } from './city-build.js';
 import { makeMonument } from './monument.js';
 import { createNightSky } from './sky.js';
@@ -35,39 +40,47 @@ import {
 } from './hamlet.js';
 import { detectQuality } from './quality.js';
 import { loadCompanies, getIndustryMeta } from './data.js';
+import {
+  loadModels, bake, modelGroup, createFlora, hasFlora, updateModelWind
+} from './models.js';
 
 /* ---------------- day / night presets (blended at runtime) ---------------- */
 const ENV = {
   /* daylight is deliberately late-afternoon rather than noon: a low,
      golden key light throws long shadows across the slopes and warms
      every roof, which is most of what makes the village feel cosy */
-  day:   { sky: '#c4dced', fog: '#cfdae4', mountain: '#fff2dc', plaza: '#d8d1c3', path: '#9a8058',
-           hemiSky: '#ffe9cc', hemiGround: '#74713f', hemiI: 0.76,
-           sunColor: '#ffcd8c', sunI: 2.7, window: 0.12, lamp: 0.0 },
-  night: { sky: '#04070f', fog: '#1e2a49', mountain: '#8096c9', plaza: '#5a6378', path: '#57503f',
-           hemiSky: '#93a9dd', hemiGround: '#2e3a55', hemiI: 0.74,
-           sunColor: '#a8bcff', sunI: 0.95, window: 1.5, lamp: 2.6 }
+  day:   { sky: '#a9d7f5', fog: '#c3d6e8', mountain: '#ecf6dc', plaza: '#d8d1c3', path: '#9a8058',
+           hemiSky: '#ffe9cc', hemiGround: '#74713f', hemiI: 0.95,
+           sunColor: '#ffc678', sunI: 3.3, window: 0.12, lamp: 0.0 },
+  /* night is moonlight, not a dimmer: the fill drops right down so a
+     bright silver key from the moon's side carves rims and long shadows,
+     and the warm windows, lamps and fire carry the colour against it */
+  night: { sky: '#02030a', fog: '#0f1430', mountain: '#5f73a8', plaza: '#4c5470', path: '#4a4436',
+           hemiSky: '#6f86c4', hemiGround: '#1a2036', hemiI: 0.5,
+           sunColor: '#d2dcff', sunI: 2.3, window: 0.95, lamp: 2.35 }
 };
 const C = { day: {}, night: {} };
 for (const k of ['day', 'night']) {
   for (const f of ['sky', 'fog', 'mountain', 'plaza', 'path', 'hemiSky', 'hemiGround', 'sunColor']) {
     C[k][f] = new THREE.Color(ENV[k][f]);
+    C[k][f].offsetHSL(0, 0.15, 0);        // richer world: +15% chroma on every tint
   }
 }
 const lerp = (a, b, t) => a + (b - a) * t;
 
 /* ---------------- module state ---------------- */
 let scene, camera, renderer, controls, sun, hemi;
+let composer = null, bloomPass = null;
 let mountainMat, plazaMat, pathMat;
 const roadMats = [];
 /* mountain + outer plain + distant ranges all take the same day/night tint */
 const terrainMats = [];
 const Q = detectQuality();          // how much scene this device should draw
-/* adaptive resolution: prScale quietly steps the render resolution down
-   when frames run long and climbs back when there's headroom (see animate).
-   Thresholds are seconds-per-frame: drop below ~48 fps, rise above ~58. */
+/* adaptive resolution — DISABLED: PR_FLOOR = 1 locks prScale at 1, so the
+   render resolution never steps down and in-scene text stays crisp at any
+   fps. To re-enable dynamic downscaling, set PR_FLOOR back below 1 (was 0.6). */
 let prScale = 1;
-const PR_FLOOR = 0.6, PR_WIN = 40, PR_DROP = 1 / 48, PR_RISE = 1 / 58;
+const PR_FLOOR = 1, PR_WIN = 40, PR_DROP = 1 / 48, PR_RISE = 1 / 58;
 let ftAcc = 0, ftN = 0, prHold = 0, shadowTick = 0;
 let hudStats = null, hudCount = 0, hudLast = 0;
 
@@ -94,8 +107,11 @@ let hovered = null, selected = null, needRaycast = false;
 /* the site opens at night: the lit windows, the fire, the string lights and
    the Milky Way are the scene at its best, so that is the first impression.
    ☀️ in the HUD takes you to daylight. */
-/* the site opens at night unless this visitor last chose otherwise */
-let envMix = readPref('time') === 'day' ? 0 : 1, envTarget = envMix;
+/* every visit opens at night, whatever the last visit preferred: the moon
+   over the towers, the Milky Way and the lit windows are the first impression,
+   and the overview is already turning slowly (see initThree). The sun button
+   in the HUD still switches to daylight. */
+let envMix = 1, envTarget = 1;
 let camTween = null, flight = null;
 const flyFade = document.getElementById('flyFade');
 const bannerPos = new THREE.Vector3();
@@ -103,7 +119,7 @@ const bannerPos = new THREE.Vector3();
 /* the fixed opening angle: the same composing angle the district was built
    around, but close enough that the buildings around the plaza fill the
    first frame and every name plate reads large */
-const HOME = { pos: new THREE.Vector3(85, 85, 85), target: new THREE.Vector3(0, 52, 0) };
+const HOME = { pos: new THREE.Vector3(94, 102, 94), target: new THREE.Vector3(0, 59, 0) };  // frames the HQ spire with its banner clear of the top edge
 
 const tooltip = document.getElementById('tooltip');
 const ttAvatar = document.getElementById('ttAvatar');
@@ -112,13 +128,19 @@ const ttAvatar = document.getElementById('ttAvatar');
 const wrapEl = document.getElementById('scene');
 let heroVisible = true;
 let flagMesh = null;
+let forestWind = null;
 const windItems = [];
 
 /* ---------------- three.js core ---------------- */
 function initThree() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(ENV.day.sky);
-  scene.fog = new THREE.Fog(ENV.day.fog, 300, 1000);
+  /* fog pulled in (150–780): the planted slope stops near r≈150 and the
+     first distant-forest belt only starts at r≈198, and at the old 300–1000
+     band that gap read as a crisp empty field at the far end of the mountain.
+     Nearer haze swallows the bare band into aerial perspective; the sky,
+     moon, stars and clouds all set fog:false and stay untouched. */
+  scene.fog = new THREE.Fog(ENV.day.fog, 150, 780);
 
   camera = new THREE.PerspectiveCamera(45, (wrapEl.clientWidth || 1) / (wrapEl.clientHeight || 1), 0.1, 2000);
   camera.position.set(120, 62, 268);   // above the treeline, out past the near belt
@@ -135,11 +157,23 @@ function initThree() {
   renderer.shadowMap.autoUpdate = false;
   renderer.shadowMap.needsUpdate = true;       // the first frame must cast
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.16;
+  renderer.toneMappingExposure = 1.3;
+
+  /* image-based lighting: a tiny procedural "studio" pre-filtered into a
+     cubemap. Every MeshStandardMaterial — the glass towers, the gold trims,
+     the car paint — gets real reflections instead of flat shading. This is
+     the single biggest jump in how "expensive" the district looks. */
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
+  pmrem.dispose();
+
   document.getElementById('scene').appendChild(renderer.domElement);
   hudStats = document.getElementById('hudStats');
 
   controls = new OrbitControls(camera, renderer.domElement);
+  /* OrbitControls claims every touch gesture inline; give vertical swipes
+     back to the page so phones can scroll past the hero */
+  renderer.domElement.style.touchAction = 'pan-y';
   controls.target.copy(HOME.target);
   controls.enableDamping = true;
   controls.dampingFactor = 0.06;
@@ -163,6 +197,22 @@ function initThree() {
   sun.shadow.camera.near = 10;   sun.shadow.camera.far = 480;
   sun.shadow.bias = -0.0005;
   scene.add(hemi, sun);
+
+  /* bloom: after dark the lit windows, lamps, fire, brand lights and the
+     moon's halo spill soft light into the air around them. The threshold
+     sits at 1.55 (in linear light, before tone mapping), so only genuinely
+     bright emissives glow — sign lettering and moonlit walls stay crisp.
+     applyEnv() eases it up at night and almost off by day. */
+  if (Q.bloom) {
+    const w = wrapEl.clientWidth || 1, h = wrapEl.clientHeight || 1;
+    composer = new EffectComposer(renderer);
+    composer.setPixelRatio(Q.pixelRatio);
+    composer.setSize(w, h);
+    composer.addPass(new RenderPass(scene, camera));
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.2, 0.55, 1.55);
+    composer.addPass(bloomPass);
+    composer.addPass(new OutputPass());         // tone mapping + sRGB, as the renderer would
+  }
 
   addEventListener('resize', onResize);
   if (window.ResizeObserver) new ResizeObserver(() => onResize()).observe(wrapEl);
@@ -193,11 +243,16 @@ async function buildDistrict() {
     const s = spots[i], dims = getBuildingDims(c);
     pads.push({ x: s.x, z: s.z, r: Math.max(dims.w, dims.d) * 0.62 + 3.2, y: baseH(s.x, s.z) });
   });
-  const H = withPads(baseH, pads);
+  const HP = withPads(baseH, pads);
+  const H = withRoadBed(HP);                     // graded road: level across, smooth along
   const groundY = baseH(0, 0);
 
+  /* every tree, bush, rock and flower from the model library is collected
+     here and drawn as instances once the whole mountain is planted */
+  const flora = createFlora(Q.floraTris);
+
   /* the mountain itself (vertex-coloured; day/night tint via applyEnv) */
-  const mountain = makeMountain(H);
+  const mountain = makeMountain(H, HP);
   mountainMat = mountain.material;
   scene.add(mountain);
   terrainMats.push(mountainMat);
@@ -211,6 +266,7 @@ async function buildDistrict() {
   const forest = makeDistantForest(Q.forest);
   scene.add(forest);
   for (const m of forest.children) terrainMats.push(m.material);
+  forestWind = forest.userData.updateWind || null;   // GPU sway for the merged belts
 
   await step(0.46);
 
@@ -230,7 +286,7 @@ async function buildDistrict() {
   };
   const asphaltMat = strip({ map: surf, roughness: 0.78, metalness: 0.04 }, '#ffffff', '#7e8aa6');
   const shoulderMat = strip({ roughness: 1 }, '#bdb094', '#646979');
-  const vergeMat = strip({ roughness: 1 }, '#7f8b59', '#444f60');
+  const vergeMat = strip({ roughness: 1 }, '#6f9a4a', '#444f60');
   pathMat = shoulderMat;
   /* the carriageway runs past the prop-line at both ends: inward
      (t0 = -0.125, r ≈ 14) it slides under the summit plaza disc, and
@@ -247,11 +303,19 @@ async function buildDistrict() {
     const rng = mulberry32(31337);
     const tip = roadAt(1.15);
     const tipA = Math.atan2(tip.z, tip.x);
+    const tail = spiralRoadPoints(0.9, 1.15, 160);
     for (let i = 0; i < 7; i++) {
-      const tree = makeTree(rng);
       const ta = tipA + (rng() - 0.5) * 0.18;
       const tr = 142 + rng() * 14;
-      const tx = Math.cos(ta) * tr, tz = Math.sin(ta) * tr;
+      let tx = Math.cos(ta) * tr, tz = Math.sin(ta) * tr;
+      /* flank the track rather than stand on it: the tail runs roughly
+         round the mountain here, so step radially (in or out) until clear */
+      for (let k = 0; k < 12 && tail.some((p) => Math.hypot(p.x - tx, p.z - tz) < 5.5); k++) {
+        const side = i % 2 ? 1 : -1;
+        tx += Math.cos(tipA) * side * 1.5; tz += Math.sin(tipA) * side * 1.5;
+      }
+      if (flora.add('broadleaf', rng, tx, H(tx, tz) - 0.2, tz, 6.5 + rng() * 2.5)) continue;
+      const tree = makeTree(rng);
       tree.position.set(tx, H(tx, tz) - 0.1, tz);
       tree.rotation.y = rng() * Math.PI * 2;
       scene.add(tree);
@@ -260,6 +324,7 @@ async function buildDistrict() {
   }
 
   /* spur path from the road (or plaza edge) to every front door */
+  const gardenPaths = [];
   sorted.forEach((c, i) => {
     const s = spots[i], dims = getBuildingDims(c);
     const dl = Math.hypot(s.x, s.z) || 1;
@@ -268,6 +333,7 @@ async function buildDistrict() {
     const start = s.roadT !== undefined ? roadAt(s.roadT) : { x: -dx * 17.5, z: -dz * 17.5 };
     const mid = { x: (start.x + door.x) / 2 + dz * 1.4, z: (start.z + door.z) / 2 - dx * 1.4 };
     scene.add(makeRoadRibbon([start, mid, door], 1.5, shoulderMat, H, { simple: true }));
+    gardenPaths.push([start, mid, door]);
   });
 
   /* summit plaza: stone disc + monument + flag + tree ring + lamps */
@@ -280,11 +346,14 @@ async function buildDistrict() {
 
   const monument = makeMonument();
   monument.group.position.y = groundY;
-  monument.group.scale.setScalar(1.38);       // the landmark, not a garden ornament
+  /* the HQ model is built at the size it stands; the old procedural
+     landmark was scaled up to read as the landmark, not a garden ornament */
+  if (!monument.fromModel) monument.group.scale.setScalar(1.38);
   scene.add(monument.group);
   windowMats.push(...monument.signMats);
   lampMats.push(...monument.lampMats);
-  marqueeMats.push(monument.marquee);
+  if (monument.marquee) marqueeMats.push(monument.marquee);
+  if (monument.blink) blinkMats.push(...monument.blink);
   plazaMonument = monument;
   const flag = makeFlag();
   flag.position.set(12.5, groundY, 5.5);
@@ -300,8 +369,10 @@ async function buildDistrict() {
     if (da > Math.PI) da -= Math.PI * 2;
     if (da < -Math.PI) da += Math.PI * 2;
     if (Math.abs(da) < 0.62) continue;
+    const px = Math.cos(a) * 15.6, pz = Math.sin(a) * 15.6;
+    if (flora.add(i % 2 ? 'birch' : 'autumn', rand, px, groundY, pz, 5 + rand() * 1.4)) continue;
     const t = makeTree(rand);
-    t.position.set(Math.cos(a) * 15.6, groundY, Math.sin(a) * 15.6);
+    t.position.set(px, groundY, pz);
     scene.add(t);
     windItems.push(t);
   }
@@ -355,11 +426,19 @@ async function buildDistrict() {
     if (b.mats.lamp) lampMats.push(...b.mats.lamp);
     if (b.marquees) marqueeMats.push(...b.marquees);
     if (b.banner) {
-      /* a modest stagger so neighbouring plates do not hide each other —
-         they stay under the monument's own sign band, which has to read
-         as the tallest thing on the summit. setLift() grows the mast. */
-      b.banner.setLift(b.banner.lift + (i % 3) * 2.7);
+      /* the rooftop sign is a live hit target too: hover it for the card,
+         click it for the dive — same as the building under it */
+      /* the name itself is an HTML label now (see buildLabels): always the
+         same legible size. The sprite plate stays as the label's anchor. */
+      b.banner.plate.visible = false;
       banners.push(b.banner);
+    }
+    if (b.halo) {
+      /* the clickable cue sits on the pad, not on the building — it has to
+         stay on the ground when the building lifts under the cursor */
+      b.halo.position.set(s.x, b.baseY + 0.16, s.z);
+      b.halo.userData.phase = i * 1.7;
+      scene.add(b.halo);
     }
     windItems.push(...b.wind);
     if (b.smoke) smokeStacks.push(...b.smoke);
@@ -381,8 +460,85 @@ async function buildDistrict() {
     if (da < -Math.PI) da += Math.PI * 2;
     return Math.abs(da) * Math.max(r, 1) > margin;
   };
+  /* clearOfRoad() compares angles at the point's own radius, but the
+     spiral's next loop can pass a few metres away radially — that is how
+     trees and props ended up standing on the carriageway. roadDist() is the
+     real distance to the road's centreline and to every garden path,
+     looked up through an 8 m grid so thousands of placements stay cheap. */
+  const CELL = 8, roadGrid = new Map();
+  const addRoadPt = (x, z) => {
+    const key = Math.floor(x / CELL) + ',' + Math.floor(z / CELL);
+    if (!roadGrid.has(key)) roadGrid.set(key, []);
+    roadGrid.get(key).push(x, z);
+  };
+  for (const p of spiralRoadPoints(-0.125, 1.15, 1600)) addRoadPt(p.x, p.z);
+  for (const path of gardenPaths) {
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i], b = path[i + 1], n = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 0.8);
+      for (let k = 0; k <= n; k++) addRoadPt(a.x + (b.x - a.x) * k / n, a.z + (b.z - a.z) * k / n);
+    }
+  }
+  const roadDist = (x, z) => {
+    const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL);
+    let d2 = Infinity;
+    for (let i = -2; i <= 2; i++) {
+      for (let j = -2; j <= 2; j++) {
+        const pts = roadGrid.get((cx + i) + ',' + (cz + j));
+        if (!pts) continue;
+        for (let k = 0; k < pts.length; k += 2) {
+          const dx = pts[k] - x, dz = pts[k + 1] - z, q = dx * dx + dz * dz;
+          if (q < d2) d2 = q;
+        }
+      }
+    }
+    return Math.sqrt(d2);                       // Infinity: nothing within ~16 m
+  };
+  /* margin is clearance from the road's edge; its carriageway and shoulders
+     reach about 2.2 m either side of the centreline */
+  /* the waterfall comes first: its stream decides where the crane can stand
+     (it only needs the terrain), and the bridges below are cut to it */
+  waterfall = makeWaterfall(H, { a: 0.79, r: 41, rPool: 55 });
+  scene.add(waterfall.group);
+
+  const reserved = [];                    // sites kept for the buildings placed after the forest
   const freeSpot = (x, z, margin) =>
-    clearOfRoad(x, z, margin) && !pads.some((p) => Math.hypot(x - p.x, z - p.z) < p.r + margin * 0.4);
+    Math.hypot(x, z) > 18.5 && roadDist(x, z) > margin + 2.2 &&
+    !pads.some((p) => Math.hypot(x - p.x, z - p.z) < p.r + margin * 0.4) &&
+    !reserved.some((p) => Math.hypot(x - p.x, z - p.z) < p.r + margin * 0.4);
+  const reserve = (ang, rad, r) => reserved.push({ x: Math.cos(ang) * rad, z: Math.sin(ang) * rad, r });
+
+  /* the hamlet, the windmill and the plunge pool are placed after the woods
+     are planted — keep their ground clear so no tree grows through the inn */
+  reserve(2.28, 67.5, 9);                 // market row
+  reserve(2.44, 72.5, 8);                 // inn
+  reserve(2.15, 69.5, 3);                 // well
+  reserve(5.42, 51, 8);                   // chapel
+  reserve(3.86, 74, 11);                  // farm
+  reserve(0.845, 92, 8);                  // mill
+  reserve(1.52, 92.4, 6);                 // viewpoint
+  reserve(-0.95, 75, 7);                  // windmill + log pile
+  reserve(0.79, 55, 10);                  // plunge pool
+
+  /* the ferris wheel wants the first open meadow behind the market */
+  let wheelAt = null;
+  for (let r = 70; r < 125 && !wheelAt; r += 2) {
+    for (let a = 2.0; a < 2.9 && !wheelAt; a += 0.04) {
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      if (roadDist(x, z) > 12 && freeSpot(x, z, 8)) wheelAt = { x, z, a };   // half the wheel + a verge
+    }
+  }
+  if (wheelAt) reserved.push({ x: wheelAt.x, z: wheelAt.z, r: 9 });
+  /* the crane stands on the next building plot the layout would hand out,
+     or the nearest to it that is clear of the road and the stream */
+  const plotT = computeMountainLayout(sorted.length + 1)[sorted.length].roadT || 0.46;
+  let craneAt = null;
+  for (let k = 0; k < 40 && !craneAt; k++) {
+    const t = plotT + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.012;
+    const p = roadAt(t), x = p.x * (p.r + 12) / p.r, z = p.z * (p.r + 12) / p.r;
+    if (roadDist(x, z) > 8 && freeSpot(x, z, 4) &&
+        waterfall.streamPts.every((q) => Math.hypot(q.x - x, q.z - z) > 9)) craneAt = { x, z };
+  }
+  if (craneAt) reserved.push({ x: craneAt.x, z: craneAt.z, r: 6 });
 
   const staticScatter = [];               // merged in one go once placed
   const plant = (make, n, rMin, rMax, margin, tries, batch) => {
@@ -394,29 +550,93 @@ async function buildDistrict() {
       if (!freeSpot(x, z, margin)) continue;
       const o = make(x, z, r);
       if (!o) continue;
-      o.position.set(x, H(x, z) - 0.1, z);
-      o.rotation.y = rand() * Math.PI * 2;
-      if (batch) staticScatter.push(o);
-      else {
-        scene.add(o);
-        if (o.userData.wind) windItems.push(o);
+      if (o !== true) {                     // true: planted into the flora instances
+        o.position.set(x, H(x, z) - 0.1, z);
+        o.rotation.y = rand() * Math.PI * 2;
+        if (batch) staticScatter.push(o);
+        else {
+          scene.add(o);
+          if (o.userData.wind) windItems.push(o);
+        }
       }
       placed++;
     }
     return placed;
   };
+  /* a model from the library when it loaded, the procedural prop when not.
+     Big trees sink a little further so no root shows on the downhill side. */
+  const grow = (kind, x, z, height, cast, fallback) =>
+    flora.add(kind, rand, x, H(x, z) - Math.min(0.5, height * 0.03), z, height, cast) || fallback();
 
-  /* landmark broadleaf trees — the ones that give the slopes scale */
-  plant((x, z, r) => {
-    const t = makeBigTree(rand, { scale: 0.85 + rand() * 0.6, autumn: r > 95 });
-    return t;
-  }, Q.count(38, Q.scatter), 30, 132, 6.5, 460);
+  /* ---- the woods: small forests, one kind of tree each -----------------
+     Trees grow in stands, not as a salt-shake across the slope: birch
+     copses and broadleaf stands near the summit, pine woods on the middle
+     slopes, maple groves turning on the lower meadows. Each grove is one
+     species, tallest in the middle; only its inner trees cast shadows.
+     A few specimen trees stand alone in the gaps between the woods. */
+  const woods = hasFlora('conifer');
+  if (woods) {
+    const HEIGHT = { conifer: [8, 13], birch: [6, 9], broadleaf: [7, 11], autumn: [7, 10] };
+    /* the slopes the opening camera looks up (HOME sits at ≈ 0.79 rad) get
+       the colourful woods — red maple, golden birch — so the first view
+       is autumn colour; the far side keeps its pines */
+    const VIEW_A = Math.atan2(HOME.pos.z, HOME.pos.x);
+    const inView = (a) => Math.abs(Math.atan2(Math.sin(a - VIEW_A), Math.cos(a - VIEW_A))) < 1.35;
+    const kindAt = (r, a) => {
+      const k = rand();
+      if (inView(a)) return k < 0.45 ? 'autumn' : k < 0.8 ? 'birch' : r < 60 ? 'broadleaf' : 'conifer';
+      if (r < 60) return k < 0.5 ? 'birch' : 'broadleaf';
+      if (r < 100) return k < 0.55 ? 'conifer' : k < 0.8 ? 'broadleaf' : 'birch';
+      return k < 0.5 ? 'autumn' : 'conifer';
+    };
+    const centres = [];
+    const want = Q.count(36, Q.scatter);
+    for (let g = 0; g < 900 && centres.length < want; g++) {
+      /* every third attempt aims into the view sector so it fills first */
+      const a = g % 3 === 0 ? VIEW_A + (rand() - 0.5) * 2.4 : rand() * Math.PI * 2;
+      const r = 30 + rand() * 112;
+      const cx = Math.cos(a) * r, cz = Math.sin(a) * r;
+      if (!freeSpot(cx, cz, 8) || centres.some((c) => Math.hypot(c.x - cx, c.z - cz) < 15)) continue;
+      const kind = kindAt(r, a), [h0, h1] = HEIGHT[kind];
+      const R = 8 + rand() * 7, n = 13 + Math.floor(rand() * 11);
+      const trunks = [];
+      for (let t = 0; t < n * 6 && trunks.length < n; t++) {
+        const ta = rand() * Math.PI * 2, tr = R * Math.sqrt(rand());
+        const x = cx + Math.cos(ta) * tr, z = cz + Math.sin(ta) * tr;
+        if (!freeSpot(x, z, 2.5) || trunks.some((p) => Math.hypot(p.x - x, p.z - z) < 2.2)) continue;
+        const h = (h0 + rand() * (h1 - h0)) * (1 - 0.24 * tr / R);
+        flora.add(kind, rand, x, H(x, z) - Math.min(0.5, h * 0.03), z, h, tr < R * 0.55);
+        trunks.push({ x, z });
+      }
+      centres.push({ x: cx, z: cz });
+    }
+    /* specimens between the woods */
+    plant((x, z) => (centres.some((c) => Math.hypot(c.x - x, c.z - z) < 13) ? null
+      : grow('landmark', x, z, 11 + rand() * 4, true, () => null)),
+    Q.count(16, Q.scatter), 34, 130, 6.5, 400);
+    /* infill: young trees scattered through the gaps between the groves, so
+       the woods read as one continuous canopy from the overview instead of
+       islands of forest on a meadow. Smaller than the grove trees, the same
+       mixed kinds, and only a quarter cast shadows — the shadow pass stays
+       affordable while the canopy closes */
+    plant((x, z, r) => {
+      if (centres.some((c) => Math.hypot(c.x - x, c.z - z) < 13)) return null;
+      const kind = kindAt(r, Math.atan2(z, x)), [h0, h1] = HEIGHT[kind];
+      return grow(kind, x, z, h0 * 0.8 + rand() * (h1 - h0) * 0.55, rand() < 0.25, () => null);
+    }, Q.count(140, Q.scatter), 22, 148, 3, 1600);
+  } else {
+    /* no model library: the procedural mix, as before */
+    plant((x, z, r) => makeBigTree(rand, { scale: 0.85 + rand() * 0.6, autumn: r > 95 }),
+      Q.count(38, Q.scatter), 30, 132, 6.5, 460);
+  }
 
   /* a grove of three giants guarding the last bend before the summit */
   for (let i = 0; i < 3; i++) {
     const a = 1.15 + i * 0.42;
     const r = 30 + i * 3.5;
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (!freeSpot(x, z, 3.5)) continue;
+    if (flora.add('landmark', rand, x, H(x, z) - 0.5, z, 15 + rand() * 2)) continue;
     const t = makeBigTree(rand, { scale: 1.35 });
     t.position.set(x, H(x, z) - 0.1, z);
     t.rotation.y = rand() * 6.28;
@@ -424,39 +644,72 @@ async function buildDistrict() {
     windItems.push(t);
   }
 
-  /* conifer belt: snow-laden up high, plain green lower down */
-  plant((x, z, r) => makeGiantPine(rand, { snowy: H(x, z) > 40 && rand() < 0.75 }),
-    Q.count(52, Q.scatter), 28, 130, 4.5, 620);
-  plant(() => {
-    const t = rand() < 0.6 ? makePine(rand) : makeTree(rand);
-    t.scale.setScalar(0.85 + rand() * 0.8);
-    /* the infill trees skip the shadow pass — at this size and count
-       their shadows cost more than they read */
-    t.traverse((o) => { if (o.isMesh) o.castShadow = false; });
-    return t;
-  }, Q.count(118, Q.scatter), 26, 148, 3, 820);
+  if (!woods) {
+    /* conifer belt and infill — the procedural fallback. The infill skips
+       the shadow pass: at this size and count its shadows cost more than
+       they read */
+    plant((x, z) => makeGiantPine(rand, { snowy: H(x, z) > 40 && rand() < 0.75 }),
+      Q.count(52, Q.scatter), 28, 130, 4.5, 620);
+    plant(() => {
+      const t = rand() < 0.6 ? makePine(rand) : makeTree(rand);
+      t.scale.setScalar(0.85 + rand() * 0.8);
+      t.traverse((o) => { if (o.isMesh) o.castShadow = false; });
+      return t;
+    }, Q.count(118, Q.scatter), 26, 148, 3, 820);
+  }
 
   /* the forest floor: undergrowth, deadfall and meadow flowers. Without
      these the slopes read as a lawn with cones standing on it. */
-  plant(() => makeBush(rand), Q.count(150, Q.scatter), 20, 152, 2.2, 900, true);
-  plant(() => makeRockCluster(rand), Q.count(54, Q.scatter), 24, 156, 2.8, 460, true);
+  plant((x, z) => grow('bush', x, z, 0.7 + rand() * 0.8, false, () => makeBush(rand)),
+    Q.count(260, Q.scatter), 20, 152, 2.2, 1400, true);
+  plant((x, z) => grow('rock', x, z, 0.8 + rand() * 1.4, true, () => makeRockCluster(rand)),
+    Q.count(54, Q.scatter), 24, 156, 2.8, 460, true);
   plant(() => makeStump(rand), Q.count(30, Q.scatter), 26, 148, 2.4, 260, true);
   plant(() => makeFallenLog(rand), Q.count(26, Q.scatter), 26, 146, 3.2, 260, true);
-  plant(() => makeFlowerPatch(rand), Q.count(70, Q.scatter), 20, 140, 2.2, 480);
+  /* a patch of dandelions is a handful of heads, not one */
+  plant((x, z) => {
+    if (!hasFlora('flower')) return makeFlowerPatch(rand);
+    for (let k = 3 + Math.floor(rand() * 5); k > 0; k--) {
+      const fx = x + (rand() - 0.5) * 1.6, fz = z + (rand() - 0.5) * 1.6;
+      flora.add('flower', rand, fx, H(fx, fz) - 0.02, fz, 0.35 + rand() * 0.3, false);
+    }
+    return true;
+  }, Q.count(100, Q.scatter), 20, 140, 2.2, 620);
   plant(() => makeCairn(rand), Q.count(9, Q.scatter), 40, 130, 3, 90, true);
+
+  /* meadow grass over the open ground: clumps of the grass models, a metre
+     or so tall, so the slopes read as grassland from the overview rather
+     than as bare painted terrain. No shadows — it is ground cover. */
+  if (hasFlora('meadow')) {
+    const steep = (x, z) =>
+      Math.hypot(H(x + 1.2, z) - H(x - 1.2, z), H(x, z + 1.2) - H(x, z - 1.2)) / 2.4;
+    plant((x, z) => {
+      if (steep(x, z) > 0.9) return null;
+      for (let k = 3 + Math.floor(rand() * 5); k > 0; k--) {
+        const gx = x + (rand() - 0.5) * 5, gz = z + (rand() - 0.5) * 5;
+        if (!freeSpot(gx, gz, 1.6)) continue;
+        flora.add('meadow', rand, gx, H(gx, gz) - 0.05, gz, 0.5 + rand() * 0.55, false);
+      }
+      return true;
+    }, Q.count(160, Q.scatter), 18, 150, 2, 1500);
+  }
 
   /* the undergrowth never moves, so it can collapse to a handful of meshes */
   for (const m of batchScatter(staticScatter)) scene.add(m);
 
-  /* a grass layer over the meadows, bending with every gust */
+  /* a grass layer over the meadows, bending with every gust. The tuft model
+     is a whole clump where the procedural one was three blades, so it takes
+     far fewer of them to cover the same ground. */
+  const tuft = bake('grass-tuft', { height: 0.55 });
   grass = createGrass(scene, H, rand, {
-    count: Q.grass,
+    count: tuft ? Math.round(Q.grass * 0.22) : Q.grass,
+    geometry: tuft ? tuft.parts[0].geometry : null,
     reject: (x, z) => !freeSpot(x, z, 2.2)
   });
 
   /* the windmill on the north-east shoulder — the scene's wind vane */
   {
-    const a = -0.95, r = 66;
+    const a = -0.95, r = 75;                      // clear of the road, which passes r ≈ 62 here
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     windmill = makeWindmill();
     windmill.position.set(x, H(x, z) - 0.2, z);
@@ -497,7 +750,10 @@ async function buildDistrict() {
     const lx = p.x + ix * 2.5, lz = p.z + iz * 2.5;
     const lamp = makeStreetLamp(H, lx, lz, rand);
     lamp.position.set(lx, H(lx, lz) - 0.05, lz);
-    lamp.rotation.y = Math.atan2(-ix, -iz) + Math.PI / 2;
+    /* the gooseneck leans the lantern (and its light pool) out on local +X,
+       so aim that axis back over the road. The old atan2(-ix, -iz) + PI/2
+       was exactly PI off, leaving every post lighting the embankment. */
+    lamp.rotation.y = Math.atan2(iz, -ix);
     scene.add(lamp);
     lampMats.push(lamp.userData.bulbMat);
     lamp.userData.night.forEach((m, k) => roadGlowMats.push({ m, k: lamp.userData.nightK[k], opacity: true }));
@@ -540,12 +796,9 @@ async function buildDistrict() {
     roadGlowMats.push({ m: sign.userData.signMat, k: 0.55 });
   }
 
-  /* the waterfall: sited on the steepest face the terrain offers, well
-     clear of the road, and facing the default camera */
-  waterfall = makeWaterfall(H, { a: 0.79, r: 41, rPool: 55 });
-  scene.add(waterfall.group);
-
-  /* the stream it feeds runs downhill and has to get past the switchback.
+  /* the waterfall (built before the woods, sited on the steepest face the
+     terrain offers, well clear of the road and facing the default camera):
+     the stream it feeds runs downhill and has to get past the switchback.
      Find every place the two actually meet and put a bridge there — a
      torrent running straight across a carriageway breaks the illusion. */
   {
@@ -575,6 +828,8 @@ async function buildDistrict() {
 
   await step(0.90);
 
+  const marketSpots = [];   // where the stall-keepers stand (handed to life.js)
+
   /* ---- the places people actually use -----------------------------------
      A market row and an inn at a wide bend, a chapel on the knoll above,
      a farm on the open shoulder, a mill on the stream below the falls and
@@ -595,6 +850,8 @@ async function buildDistrict() {
     for (let i = 0; i < 4; i++) {
       const a2 = bendA + (i - 1.5) * 0.058;
       put(makeStall(rand, lit), a2, bendR + 5.5, Math.atan2(Math.cos(a2), Math.sin(a2)) + Math.PI);
+      /* a keeper stands a pace behind each awning */
+      marketSpots.push(new THREE.Vector2(Math.cos(a2) * (bendR + 7.4), Math.sin(a2) * (bendR + 7.4)));
     }
     const inn = put(makeInn(rand, lit, smokeStacks), bendA + 0.16, bendR + 10.5);
     smokeStacks.push((() => {
@@ -605,7 +862,7 @@ async function buildDistrict() {
     })());
     put(makeWell(rand), bendA - 0.13, bendR + 7.5);
 
-    put(makeChapel(rand, lit), 5.42, 58);
+    put(makeChapel(rand, lit), 5.42, 51);          // between the loops: the road passes r ≈ 63 here
     put(makeFarm(rand, lit), 3.86, 74);
 
     /* the mill straddles the stream a little below the road bridge */
@@ -620,6 +877,160 @@ async function buildDistrict() {
 
     windowMats.push(...lit);
   }
+
+  /* ---- the rest of the model library -----------------------------------
+     A fairground wheel behind the market, a tower crane on the next free
+     plot (the district is still growing — add a company and a building
+     rises there), road furniture where the road meets the summit and the
+     valley, a palm-fringed pool under the waterfall, bamboo along the
+     stream and stepping stones up every garden path. */
+  {
+    const seat = (obj, x, z, yaw, sink = 0) => {
+      obj.position.set(x, H(x, z) - sink, z);
+      obj.rotation.y = yaw;
+      scene.add(obj);
+      return obj;
+    };
+
+    /* the wheel and the crane stand on the sites reserved before the woods
+       were planted (see reserve() above) */
+    const wheel = modelGroup('ferris-wheel', { height: 15 });
+    if (wheel && wheelAt) seat(wheel, wheelAt.x, wheelAt.z, -wheelAt.a + Math.PI / 2, 0.3);
+
+    /* the crane's pivot is mid-jib, so measure where its mast meets the
+       ground and stand that on the plot, jib reaching out over the valley */
+    const crane = modelGroup('crane', { height: 21 });
+    const next = craneAt;
+    if (crane && next) {
+      const foot = new THREE.Box3();
+      const v = new THREE.Vector3();
+      for (const m of crane.children) {
+        const pos = m.geometry.attributes.position;
+        for (let i = 0; i < pos.count; i++) if (pos.getY(i) < 1.5) foot.expandByPoint(v.fromBufferAttribute(pos, i));
+      }
+      const mast = foot.getCenter(new THREE.Vector3());
+      for (const m of crane.children) m.position.set(-mast.x, 0, -mast.z);
+      /* the jib runs along the model's z, away from the mast: turn it outward */
+      seat(crane, next.x, next.z, Math.atan2(next.x, next.z) + (mast.z < 0 ? 0 : Math.PI), 0.2);
+    }
+
+    /* a zebra crossing and a signal where the road arrives on the summit */
+    const cross = roadAt(-0.06), crossNext = roadAt(-0.05);
+    const roadYaw = Math.atan2(crossNext.x - cross.x, crossNext.z - cross.z);
+    const tile = bake('road-bits', { part: 'road_straight_crossing', length: 3.4 });
+    if (tile) {
+      const g = new THREE.Group();
+      for (const p of tile.parts) {
+        const m = p.material;
+        m.polygonOffset = true;                   // lie on the asphalt, not in it
+        m.polygonOffsetFactor = m.polygonOffsetUnits = -4;
+        g.add(new THREE.Mesh(p.geometry, m));
+      }
+      g.traverse((o) => { if (o.isMesh) o.receiveShadow = true; });
+      seat(g, cross.x, cross.z, roadYaw, -0.04);
+    }
+    const signal = modelGroup('traffic-light', { height: 4.6 });
+    if (signal) {
+      const dl = Math.hypot(cross.x, cross.z) || 1;
+      const sx = cross.x + (cross.x / dl) * 2.6, sz = cross.z + (cross.z / dl) * 2.6;
+      seat(signal, sx, sz, Math.atan2(cross.x, cross.z) + Math.PI / 2);
+    }
+    const stop = modelGroup('stop-sign', { height: 2.6 });
+    if (stop) {
+      const foot = roadAt(0.99), dl = Math.hypot(foot.x, foot.z) || 1;
+      const sx = foot.x - (foot.x / dl) * 2.8, sz = foot.z - (foot.z / dl) * 2.8;
+      seat(stop, sx, sz, Math.atan2(-foot.x, -foot.z));
+    }
+
+    /* palms ring the plunge pool on every side but the fall's */
+    const poolA = 0.79, poolX = Math.cos(poolA) * 55, poolZ = Math.sin(poolA) * 55;
+    for (let i = 0; i < 6; i++) {
+      const a = poolA + (i / 5 - 0.5) * 3.4;            // an arc facing away from the cliff
+      const r = 8 + rand() * 3;
+      const x = poolX + Math.cos(a) * r, z = poolZ + Math.sin(a) * r;
+      if (freeSpot(x, z, 1.5)) flora.add('palm', rand, x, H(x, z) - 0.2, z, 7 + rand() * 4);
+    }
+    /* bamboo stands along the stream banks, clear of the road and its bridges */
+    const sp = waterfall.streamPts;
+    const every = Q.tier === 'high' ? 2 : 4;
+    for (let i = 2, n = 0; i < sp.length - 1; i += every, n++) {
+      const tx = sp[i + 1].x - sp[i - 1].x, tz = sp[i + 1].z - sp[i - 1].z;
+      const tl = Math.hypot(tx, tz) || 1;
+      const side = n % 2 ? 1 : -1;
+      const x = sp[i].x + (-tz / tl) * 2.6 * side, z = sp[i].z + (tx / tl) * 2.6 * side;
+      if (freeSpot(x, z, 2.5)) flora.add('bamboo', rand, x, H(x, z) - 0.1, z, 5 + rand() * 3);
+    }
+
+    /* stepping stones up the middle of each garden path */
+    const stone = bake('path-stones', { length: 1.3 });
+    if (stone) {
+      const placed = [];
+      sorted.forEach((c, i) => {
+        const s = spots[i], dims = getBuildingDims(c);
+        const dl = Math.hypot(s.x, s.z) || 1;
+        const dx = -s.x / dl, dz = -s.z / dl;
+        const door = { x: s.x + dx * (dims.d / 2 + 2.2), z: s.z + dz * (dims.d / 2 + 2.2) };
+        const start = s.roadT !== undefined ? roadAt(s.roadT) : { x: -dx * 17.5, z: -dz * 17.5 };
+        const len = Math.hypot(door.x - start.x, door.z - start.z);
+        const yaw = Math.atan2(door.x - start.x, door.z - start.z);
+        for (let d = 1.2; d < len - 0.6; d += 1.5) {
+          const k = d / len;
+          const x = start.x + (door.x - start.x) * k, z = start.z + (door.z - start.z) * k;
+          placed.push(new THREE.Matrix4().compose(
+            new THREE.Vector3(x, H(x, z) + 0.02, z),
+            new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw + (rand() - 0.5) * 0.3),
+            new THREE.Vector3(1, 1, 1)));
+        }
+      });
+      for (const p of stone.parts) {
+        const mesh = new THREE.InstancedMesh(p.geometry, p.material, placed.length);
+        placed.forEach((m, k) => mesh.setMatrixAt(k, m));
+        mesh.receiveShadow = true;
+        mesh.computeBoundingSphere();
+        scene.add(mesh);
+      }
+    }
+  }
+
+  /* lanterns along every garden path, alternating sides — small warm lights
+     at walking height are most of what makes a mountain village feel lived
+     in after dark. Posts and heads are one instanced mesh each; the heads
+     light with the street lamps and bloom does the glow. */
+  {
+    const posts = [], heads = [];
+    const m4 = new THREE.Matrix4(), up = new THREE.Vector3(0, 1, 0), q = new THREE.Quaternion();
+    for (const path of gardenPaths) {
+      for (let i = 0, n = 0; i < path.length - 1; i++) {
+        const a = path[i], b = path[i + 1];
+        const len = Math.hypot(b.x - a.x, b.z - a.z), nx = -(b.z - a.z) / len, nz = (b.x - a.x) / len;
+        for (let d = 1.5; d < len - 0.5; d += 3.6, n++) {
+          const side = n % 2 ? 1 : -1;
+          const x = a.x + (b.x - a.x) * d / len + nx * side * 1.25;
+          const z = a.z + (b.z - a.z) * d / len + nz * side * 1.25;
+          const y = H(x, z);
+          posts.push(m4.compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(1, 1, 1)).clone());
+          heads.push(m4.compose(new THREE.Vector3(x, y + 1.05, z), q.setFromAxisAngle(up, n), new THREE.Vector3(1, 1, 1)).clone());
+        }
+      }
+    }
+    if (posts.length) {
+      const postGeo = new THREE.CylinderGeometry(0.045, 0.06, 1.0, 6);
+      postGeo.translate(0, 0.5, 0);
+      const postMesh = new THREE.InstancedMesh(postGeo,
+        new THREE.MeshStandardMaterial({ color: '#2a2f3a', roughness: 0.5, metalness: 0.5 }), posts.length);
+      const headMat = new THREE.MeshStandardMaterial({
+        color: '#ffe2ae', emissive: new THREE.Color('#ffb85c'), emissiveIntensity: 0, roughness: 0.4
+      });
+      lampMats.push(headMat);
+      const headMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 0.26, 0.2), headMat, heads.length);
+      posts.forEach((mm, i) => postMesh.setMatrixAt(i, mm));
+      heads.forEach((mm, i) => headMesh.setMatrixAt(i, mm));
+      for (const im of [postMesh, headMesh]) { im.computeBoundingSphere(); scene.add(im); }
+    }
+  }
+
+  /* everything the model library planted goes in as instanced meshes */
+  flora.build(scene);
 
   await step(0.96);
   traffic = createTraffic(scene, H, Q.traffic);
@@ -639,7 +1050,15 @@ async function buildDistrict() {
 
   villagers = createVillagers(scene, H, {
     groundY, plazaR: 17.5, count: Q.villagers,
-    fire: new THREE.Vector2(Math.cos(FIRE_A) * FIRE_R, Math.sin(FIRE_A) * FIRE_R)
+    fire: new THREE.Vector2(Math.cos(FIRE_A) * FIRE_R, Math.sin(FIRE_A) * FIRE_R),
+    market: marketSpots
+  });
+
+  /* the IBL environment gives real reflections; keep it shy of showroom
+     brightness so the night stays cinematic */
+  scene.traverse((o) => {
+    const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+    for (const mt of mats) if (mt.isMeshStandardMaterial) mt.envMapIntensity = 0.8;
   });
 }
 
@@ -655,7 +1074,241 @@ function buildUI() {
   });
   buildFinder();
   buildLegend();
+  buildLabels();
+  buildChips();
   bindKeys();
+  const tip = document.getElementById('tooltip');
+  /* the pinned card (touch) is itself the way in: tap it to open the company */
+  tip.addEventListener('click', () => { if (selected && tip.classList.contains('pinned')) goCompany(selected); });
+}
+
+/* ---------------- readable names: HTML labels on the rooftops ----------------
+   A sign in the scene shrinks with distance — from the overview a rooftop
+   name is a few pixels of texture, whatever it says. These are real text at
+   a fixed size: each frame the rooftop is projected to the screen and its
+   tag placed there, nearest first; a tag that would overlap one already
+   placed is lifted clear, and one the tower would cover steps aside — the
+   stem under each tag stretches and swings so it always runs from the tag
+   down to the exact rooftop it labels. They are links, so they click and
+   tab like the finder. */
+const pins = [];
+const pinV = new THREE.Vector3();
+const towerV = new THREE.Vector3();        // scratch for the tower silhouette (camera-right vector)
+let towerBands = null;                     // the HQ tower sliced into height bands (rebuildTowerBands)
+let labelTick = 0;
+
+function buildLabels() {
+  const layer = document.getElementById('mapLabels');
+  if (!layer) return;
+  for (const b of buildings) {
+    const c = b.company;
+    const el = document.createElement('a');
+    el.className = 'map-pin';
+    /* the pin is a real link to the company's own site, so middle-click and
+       Ctrl+click open it natively; a plain click is preventDefault-ed below
+       and plays the camera dive first */
+    el.href = c.website || 'company.html?id=' + encodeURIComponent(c.id);
+    if (c.website) { el.target = '_blank'; el.rel = 'noopener'; }
+    el.style.setProperty('--brand', c.color);
+    el.innerHTML = '<span class="pin-badge"></span><span class="pin-text"><b></b><small></small></span>' +
+      '<span class="pin-go" aria-hidden="true">›</span>';
+    el.querySelector('.pin-badge').textContent = String(c.name || '?').charAt(0).toUpperCase();
+    el.querySelector('b').textContent = c.name;
+    el.querySelector('small').textContent = getIndustryMeta(c.industry).label;
+    el.addEventListener('mouseenter', (ev) => { setHovered(b); moveTooltip(ev.clientX, ev.clientY); });
+    el.addEventListener('mouseleave', () => setHovered(null));
+    el.addEventListener('click', (ev) => { ev.preventDefault(); goCompany(b); });
+    layer.appendChild(el);
+    pins.push({ el, b, anchor: (v) => b.banner.plate.getWorldPosition(v) });
+  }
+  if (plazaMonument) {
+    const el = document.createElement('div');
+    el.className = 'map-pin hq';
+    el.innerHTML = '<span class="pin-badge">B</span><span class="pin-text"><b>BINOMAR GROUP</b><small>Global headquarters</small></span>';
+    layer.appendChild(el);
+    const top = plazaMonument.height;
+    pins.push({ el, b: null, anchor: (v) => plazaMonument.group.localToWorld(v.set(0, top + 1.5, 0)) });
+  }
+}
+
+/* Slice the HQ tower into height bands, each remembering the widest
+   horizontal reach of the real geometry inside it. One big bounding-box
+   rectangle would claim far more of the screen than the tapered tower
+   actually covers — its podium footprint smeared over the full height —
+   and shove banners aside for nothing. The bands follow its true
+   profile: wide at the foot, slim at the spire. Rebuilt rarely (the
+   tower is static; the odd refresh catches the classic tower's
+   late-loading skyscraper GLB). */
+function rebuildTowerBands() {
+  const box = new THREE.Box3().setFromObject(plazaMonument.group);
+  if (box.isEmpty()) { towerBands = null; return; }
+  const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
+  const N = 7, H = (box.max.y - box.min.y) || 1;
+  const bands = [];
+  for (let i = 0; i < N; i++) {
+    bands.push({ y0: box.min.y + (H * i) / N, y1: box.min.y + (H * (i + 1)) / N, r: 0, cx, cz });
+  }
+  const mb = new THREE.Box3();
+  plazaMonument.group.traverse((o) => {
+    if (!o.isMesh) return;
+    mb.setFromObject(o);
+    if (mb.isEmpty()) return;
+    const r = Math.max(
+      Math.abs(mb.min.x - cx), Math.abs(mb.max.x - cx),
+      Math.abs(mb.min.z - cz), Math.abs(mb.max.z - cz));
+    for (const b of bands) if (mb.min.y < b.y1 && mb.max.y > b.y0) b.r = Math.max(b.r, r);
+  });
+  towerBands = bands;
+}
+
+function updateLabels() {
+  if (!pins.length) return;
+  const w = wrapEl.clientWidth || 1, h = wrapEl.clientHeight || 1;
+
+  /* the tower's screen silhouette this frame, band by band — a banner is
+     only ever pushed by the bands its own rectangle truly sits on */
+  labelTick++;
+  let bands = null;
+  if (plazaMonument) {
+    if (!towerBands || labelTick % 90 === 0) rebuildTowerBands();
+    if (towerBands) {
+      const right = towerV.setFromMatrixColumn(camera.matrixWorld, 0);
+      right.y = 0;
+      if (right.lengthSq() < 1e-6) right.set(1, 0, 0); else right.normalize();
+      bands = [];
+      for (const bnd of towerBands) {
+        let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, ok = true;
+        for (let s = 0; s < 4; s++) {
+          pinV.set(bnd.cx + right.x * (s & 1 ? bnd.r : -bnd.r),
+                   s & 2 ? bnd.y1 : bnd.y0,
+                   bnd.cz + right.z * (s & 1 ? bnd.r : -bnd.r)).project(camera);
+          if (pinV.z > 1) { ok = false; break; }     // behind the lens — skip this band
+          const sx = (pinV.x + 1) / 2 * w, sy = (1 - pinV.y) / 2 * h;
+          if (sx < x0) x0 = sx; if (sx > x1) x1 = sx;
+          if (sy < y0) y0 = sy; if (sy > y1) y1 = sy;
+        }
+        if (ok && x1 > x0) bands.push({ x0: x0 - 4, x1: x1 + 4, y0, y1 });
+      }
+    }
+  }
+
+  for (const p of pins) {
+    p.anchor(pinV);
+    p.depth = camera.position.distanceTo(pinV);
+    pinV.project(camera);
+    p.sx = (pinV.x + 1) / 2 * w;
+    p.sy = (1 - pinV.y) / 2 * h;
+    p.on = !flight && pinV.z > -1 && pinV.z < 1 && p.sx > -60 && p.sx < w + 60 && p.sy > 0 && p.sy < h + 40;
+  }
+  const placed = [];
+  for (const p of [...pins].sort((a, b) => a.depth - b.depth)) {
+    p.el.classList.toggle('off', !p.on);
+    if (!p.on) continue;
+    if (!p.w) { p.w = p.el.offsetWidth; p.h = p.el.offsetHeight; }
+    let x0 = p.sx - p.w / 2;
+    let lift = 0;
+    const y1 = p.sy - 10;
+
+    /* Only move a banner when it truly needs moving. Its resting rectangle
+       is tested against the tower bands it actually overlaps — and with
+       hysteresis: the side-step engages once the pill bites 6px+ into a
+       band, and releases only when it is fully clear again, so a banner
+       sitting near the edge never shuffles back and forth. When it does
+       step, it goes to the side it already leans toward — a little left
+       for left-side buildings, a little right for right-side ones. The
+       HQ's own pin (p.b null) stays anchored on the crown by design. */
+    let want = x0;
+    if (p.b && bands && bands.length) {
+      const t = y1 - p.h;                     // the pill's resting rectangle, top edge
+      let lx = Infinity, rx = -Infinity, hit = 0;
+      for (const g of bands) {
+        if (x0 < g.x1 && x0 + p.w > g.x0 && t < g.y1 && y1 > g.y0) {
+          lx = Math.min(lx, g.x0); rx = Math.max(rx, g.x1); hit++;
+        }
+      }
+      if (hit) {
+        const pen = Math.min(x0 + p.w - lx, rx - x0);      // how deep it bites in
+        if (pen > 6) p.blocked = true;
+      } else {
+        p.blocked = false;                                  // fully clear — come home
+      }
+      if (p.blocked && hit) {
+        const left = x0 + p.w / 2 < (lx + rx) / 2;
+        let nx = left ? lx - p.w : rx;
+        if (nx < 4 || nx + p.w > w - 4)       // that side runs off-screen: try the other
+          nx = left ? rx : lx - p.w;
+        want = Math.min(Math.max(nx, 4), Math.max(4, w - 4 - p.w));
+      }
+    } else if (p.b) {
+      p.blocked = false;
+    }
+    if (p.dx === undefined) p.dx = 0;
+    p.dx += (want - (p.sx - p.w / 2) - p.dx) * 0.22;      // glide aside, never snap
+    if (Math.abs(want - (p.sx - p.w / 2) - p.dx) < 0.5) p.dx = want - (p.sx - p.w / 2);
+    x0 += p.dx;
+
+    for (let k = 0; k < 5; k++) {
+      const top = y1 - lift - p.h, bot = y1 - lift;
+      if (!placed.some((q) => x0 < q.x1 + 4 && x0 + p.w > q.x0 - 4 && top < q.y1 + 3 && bot > q.y0 - 3)) break;
+      lift += p.h + 6;
+    }
+    const top = y1 - lift - p.h;
+    placed.push({ x0, x1: x0 + p.w, y0: top, y1: top + p.h });
+    p.el.style.transform = 'translate3d(' + x0.toFixed(1) + 'px,' + top.toFixed(1) + 'px,0)';
+    /* the stem is a leader line: from wherever the pill ended up (lifted
+       clear, or glided aside by the tower) diagonally down to the rooftop
+       anchor. Pill bottom-centre sits at (sx + dx, sy - 10 - lift); the roof
+       is at (sx, sy); so the line's length is hypot(dx, 10 + lift) and its
+       tilt is atan2(dx, 10 + lift) — CSS rotate() is clockwise-positive. */
+    p.el.style.setProperty('--stem', Math.hypot(p.dx, 10 + lift).toFixed(1) + 'px');
+    p.el.style.setProperty('--tilt', (Math.atan2(p.dx, 10 + lift) * 57.2958).toFixed(1) + 'deg');
+    if (p.b) p.el.classList.toggle('hot', p.b === hovered || p.b === selected);
+  }
+}
+
+/* ---------------- phones: fly-to chips ----------------
+   On a small screen the overview is a lot of district in a little glass.
+   A row of chips does the zooming for you: one tap flies the camera in to
+   a company and pins its card; tap the card to go inside. */
+function buildChips() {
+  const bar = document.getElementById('companyChips');
+  if (!bar) return;
+  const chips = [];
+  const add = (label, color, initial, onTap) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.innerHTML = '<span class="pin-badge"></span><span></span>';
+    btn.firstChild.style.background = color;
+    btn.firstChild.textContent = initial;
+    btn.lastChild.textContent = label;
+    btn.addEventListener('click', () => {
+      for (const c of chips) c.classList.toggle('on', c === btn);
+      onTap();
+    });
+    bar.appendChild(btn);
+    chips.push(btn);
+  };
+  add('District', 'linear-gradient(135deg,#f0c877,#c9a44e)', 'B', () => { selectBuilding(null); flyHome(); });
+  for (const b of buildings) {
+    const c = b.company;
+    add(c.name, c.color, String(c.name || '?').charAt(0).toUpperCase(), () => focusCompany(c.id));
+  }
+}
+
+/* The opening view is composed for a landscape screen. A phone in portrait
+   sees a narrow slice of it, so it gets a wider lens and a closer seat:
+   the summit ring fills the width and every building reads large. */
+const HOME_WIDE = { pos: HOME.pos.clone(), fov: 45 };
+function frameForViewport() {
+  const w = wrapEl.clientWidth || 1, h = wrapEl.clientHeight || 1;
+  const phone = w < 760 || w / h < 0.9;
+  camera.fov = phone ? 55 : HOME_WIDE.fov;
+  if (phone) {
+    const dir = HOME_WIDE.pos.clone().sub(HOME.target).normalize();
+    HOME.pos.copy(HOME.target).addScaledVector(dir, w / h < 0.8 ? 100 : 118);
+  } else {
+    HOME.pos.copy(HOME_WIDE.pos);
+  }
 }
 
 /* ---------------- the finder ----------------
@@ -765,6 +1418,7 @@ function renderFinderList() {
 function focusCompany(id, opts) {
   const b = buildings.find((x) => x.company.id === id);
   if (!b) return false;
+  if (spTarget > 0.02) scrollTo({ top: 0, behavior: 'smooth' });  // leave the cinema first
   selectBuilding(b);
   const centre = new THREE.Vector3();
   b.group.getWorldPosition(centre);
@@ -840,7 +1494,7 @@ function populateTooltip(b) {
   document.getElementById('ttIndustry').textContent = getIndustryMeta(c.industry).label;
   document.getElementById('ttTagline').textContent = c.tagline || 'Part of Binomar Group';
   document.getElementById('ttCta').textContent =
-    (tooltip.classList.contains('pinned') && selected === b) ? 'Tap again to open →' : 'Click to explore →';
+    (tooltip.classList.contains('pinned') && selected === b) ? 'Tap to open →' : 'Click to explore →';
 }
 
 function moveTooltip(x, y) {
@@ -900,7 +1554,9 @@ function goCompany(b) {
     t: 0, dur: 1.5, fov0: camera.fov,
     fromP: camera.position.clone(), fromT: controls.target.clone(),
     toP: to, toT: focus,
-    href: 'company.html?id=' + encodeURIComponent(b.company.id)
+    /* a company with its own site (see data/companies.js) gets the dive
+       straight into it; without one the internal profile page takes over */
+    href: b.company.website || 'company.html?id=' + encodeURIComponent(b.company.id)
   };
   controls.enabled = false;
   controls.autoRotate = false;
@@ -939,7 +1595,50 @@ function initInteraction() {
     controls.autoRotate = false;
   });
 
-  el.addEventListener('wheel', () => { controls.autoRotate = false; }, { passive: true });
+  /* The 3D map is the hero of a page with content below it, so the wheel
+     scrolls the page. Zooming the map is deliberate: Ctrl/⌘ + wheel (a
+     trackpad pinch arrives as ctrl + wheel too), or the +/− buttons. This
+     runs in the capture phase, before OrbitControls sees the event, and
+     only lets OrbitControls zoom — and swallow the scroll — when asked. */
+  controls.enableZoom = false;
+  const hint = document.getElementById('zoomHint');
+  if (hint && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) {
+    hint.innerHTML = 'Hold <b>⌘</b> and scroll to zoom the map';
+  }
+  let hintTimer = 0;
+  wrapEl.addEventListener('wheel', (ev) => {
+    const zoom = ev.ctrlKey || ev.metaKey;
+    controls.enableZoom = zoom;
+    if (zoom) { controls.autoRotate = false; return; }
+    if (!hint || spSmooth > 0.05) return;    // mid-cinema the wheel is just scrolling
+    hint.classList.add('show');
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => hint.classList.remove('show'), 1300);
+  }, { capture: true, passive: true });
+
+  /* on touch, one finger dragging up or down scrolls the page (the canvas is
+     touch-action: pan-y), sideways it orbits; two fingers pinch-zoom */
+  const touches = new Set();
+  const syncTouchZoom = () => { controls.enableZoom = touches.size >= 2; };
+  wrapEl.addEventListener('pointerdown', (ev) => {
+    if (ev.pointerType !== 'touch') return;
+    touches.add(ev.pointerId);
+    syncTouchZoom();
+  }, true);
+  for (const type of ['pointerup', 'pointercancel']) {
+    wrapEl.addEventListener(type, (ev) => { touches.delete(ev.pointerId); syncTouchZoom(); }, true);
+  }
+
+  const zoomBtn = (id, f) => {
+    const b = document.getElementById(id);
+    if (b) b.addEventListener('click', () => zoomBy(f));
+  };
+  zoomBtn('btnZoomIn', 0.72);
+  zoomBtn('btnZoomOut', 1.38);
+
+  /* the "discover the group" cue bows out once the page has been scrolled */
+  const cue = document.getElementById('scrollCue');
+  if (cue) addEventListener('scroll', () => cue.classList.toggle('gone', scrollY > 40), { passive: true });
 
   el.addEventListener('pointerup', (ev) => {
     if (!down) return;
@@ -994,6 +1693,15 @@ function applyEnv(m) {
   for (const mt of windowMats) mt.emissiveIntensity = win;
   const lamp = lerp(ENV.day.lamp, ENV.night.lamp, m);
   for (const mt of lampMats) mt.emissiveIntensity = lamp;
+  /* bloom: a whisper by day (only the sun-struck gold catches), a warm
+     halo round only the genuinely bright points after dark — lamp heads,
+     signage, fire, the beacon. Lit windows sit below the threshold and
+     read as calm interior glass, not glowing orbs */
+  if (bloomPass) {
+    bloomPass.strength = lerp(0.08, 0.3, m);
+    bloomPass.threshold = lerp(1.8, 1.55, m);
+    bloomPass.radius = lerp(0.3, 0.34, m);
+  }
   /* reflectors, sign faces, lamp bloom and the pools of light on the road */
   for (const it of roadGlowMats) {
     if (it.opacity) it.m.opacity = it.k * m;
@@ -1003,6 +1711,15 @@ function applyEnv(m) {
 }
 
 /* ---------------- camera helpers ---------------- */
+/* a short eased dolly toward / away from the orbit target (the +/− buttons) */
+let zoomTween = null;
+function zoomBy(f) {
+  const len = camera.position.distanceTo(controls.target);
+  const to = Math.min(controls.maxDistance, Math.max(controls.minDistance, len * f));
+  zoomTween = { t: 0, from: len, to };
+  controls.autoRotate = false;
+}
+
 function flyHome() {
   camTween = { t: 0, dur: 1.3, fromP: camera.position.clone(), fromT: controls.target.clone() };
   controls.autoRotate = true;              // the overview is meant to keep turning
@@ -1012,8 +1729,100 @@ function flyHome() {
 function onResize() {
   const w = wrapEl.clientWidth || 1, h = wrapEl.clientHeight || 1;
   camera.aspect = w / h;
+  if (!flight) frameForViewport();
   camera.updateProjectionMatrix();
+  for (const p of pins) p.w = 0;              // re-measure the labels at the new size
   renderer.setSize(w, h);
+  if (composer) composer.setSize(w, h);
+}
+
+/* ---------------- scroll cinema: the 3D → page transition ----------------
+   The hero is pinned (sticky) inside a taller .hero-run runway (HTML/CSS),
+   so the first ~1.6 screens of scrolling keep the district on screen while
+   this module choreographs a camera crane-up and a slow orbit sweep. The
+   eased progress spSmooth drives three things at once: the camera path
+   below, the fog, and a --sp CSS variable the page uses to parallax the
+   overlay, veil the canvas and fly the content sections in. */
+let spTarget = 0, spSmooth = 0, cineOn = false, cineOK = false, lastSpSent = -1;
+let cineFrom = null;                          // the user's view when the cinema engages
+const cinePos = new THREE.Vector3(), cineTgt = new THREE.Vector3();
+const smoothstep = (x) => x * x * (3 - 2 * x);
+
+function scrollCine(sp) {
+  const e = smoothstep(sp);                   // scroll-scrubbed, but eased
+  const dx = HOME.pos.x - HOME.target.x, dz = HOME.pos.z - HOME.target.z;
+  const az = Math.atan2(dx, dz) + 1.05 * e;   // a slow orbit sweep around the summit
+  const rad = Math.hypot(dx, dz) * (1 + 1.15 * e);   // dolly out as it goes
+  const y = HOME.pos.y + 118 * Math.pow(e, 1.55);    // crane up, late and gentle
+  cineTgt.set(
+    THREE.MathUtils.lerp(HOME.target.x, 0, e),
+    THREE.MathUtils.lerp(HOME.target.y, 14, e),      // end looking down the mountain
+    THREE.MathUtils.lerp(HOME.target.z, 0, e));
+  cinePos.set(Math.sin(az) * rad, y, Math.cos(az) * rad);
+  const w = wrapEl.clientWidth || 1, h = wrapEl.clientHeight || 1;
+  const baseFov = (w < 760 || w / h < 0.9) ? 55 : 45; // mirrors frameForViewport
+  let fov = baseFov - 11 * e * e;             // the lens compresses the exit
+  if (cineFrom) {
+    /* blend from whatever view the user had orbiting, so engaging the cinema
+       never snaps: the first 30% of the runway morphs their view onto the path */
+    const k = smoothstep(Math.min(1, sp / 0.3));
+    camera.position.lerpVectors(cineFrom.p, cinePos, k);
+    controls.target.lerpVectors(cineFrom.t, cineTgt, k);
+    fov = THREE.MathUtils.lerp(cineFrom.f, fov, k);
+  } else {
+    camera.position.copy(cinePos);
+    controls.target.copy(cineTgt);
+  }
+  camera.fov = fov;
+  camera.lookAt(controls.target);
+  camera.updateProjectionMatrix();
+  scene.fog.near = 150 - 20 * e;              // the valley mists over as you leave
+  scene.fog.far = 780 - 250 * e;
+}
+
+/* the sections below the hero rise in with a soft 3D swing, staggered by
+   an index within their own row (see .reveal in style.css) */
+function markReveals() {
+  const els = document.querySelectorAll(
+    '#companyGrid .cl-link, #districtStats .stat, main .band .sec-title, ' +
+    'main .band .sec-sub, main .band .sec-text, main .band .cta-row');
+  els.forEach((el) => el.classList.add('reveal'));
+  for (const g of document.querySelectorAll('#companyGrid, #districtStats'))
+    [...g.children].forEach((c, i) => c.style.setProperty('--i', Math.min(i, 10)));
+  if (!window.IntersectionObserver) { els.forEach((el) => el.classList.add('in')); return; }
+  const io = new IntersectionObserver((entries) => {
+    for (const en of entries) if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+  }, { threshold: 0.15 });
+  els.forEach((el) => io.observe(el));
+}
+
+function initScrollCinema() {
+  const run = document.getElementById('heroRun');
+  const hero = document.querySelector('header.hero');
+  if (!run || !hero) return;
+  const motion = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* the runway: the hero's own height plus the scroll distance the cinema
+     should take — a little shorter on phones, none at all without motion */
+  const sizeRunway = () => {
+    run.style.height = motion
+      ? Math.round(hero.offsetHeight + innerHeight * (innerWidth < 760 ? 1.05 : 1.6)) + 'px'
+      : '';
+  };
+  sizeRunway();
+
+  if (motion) {
+    cineOK = true;
+    const measure = () => {
+      const total = run.offsetHeight - hero.offsetHeight;   // scroll px while pinned
+      spTarget = total > 4 ? Math.min(1, Math.max(0, scrollY / total)) : 0;
+    };
+    addEventListener('scroll', measure, { passive: true });
+    addEventListener('resize', () => { sizeRunway(); measure(); });
+    measure();
+    spSmooth = spTarget;                    // a reload mid-page must not replay it
+  }
+  markReveals();
 }
 
 /* ---------------- main loop ---------------- */
@@ -1027,6 +1836,29 @@ function animate() {
   const t = clock.elapsedTime;
   if (!heroVisible) return; // hero scrolled away — pause rendering, save GPU
 
+  /* scroll cinema progress: eased toward the runway position every frame, so
+     the scrub feels buttery however the wheel or the scrollbar jumps */
+  if (cineOK) {
+    spSmooth += (spTarget - spSmooth) * Math.min(1, dt * 6);
+    if (Math.abs(spTarget - spSmooth) < 0.0004) spSmooth = spTarget;
+    const wasOn = cineOn;
+    cineOn = spSmooth > 0.0015;
+    if (cineOn && !wasOn) {                   // engage: the camera path takes over
+      camTween = null; zoomTween = null;
+      controls.enabled = false;
+      cineFrom = { p: camera.position.clone(), t: controls.target.clone(), f: camera.fov };
+    }
+    if (!cineOn && wasOn) {                   // disengage: hand the camera back
+      controls.enabled = true;
+      cineFrom = null;
+      scene.fog.near = 150; scene.fog.far = 780;
+    }
+    if (Math.abs(spSmooth - lastSpSent) > 0.0005) {
+      lastSpSent = spSmooth;
+      document.documentElement.style.setProperty('--sp', spSmooth.toFixed(4));
+    }
+  }
+
   /* adaptive resolution: average the real frame times, then step the pixel
      ratio down when we can't hold ~48 fps and back up when we can. A raw
      delta over 0.25 s just means we resumed from a paused/hidden tab —
@@ -1038,10 +1870,12 @@ function animate() {
     if (avg > PR_DROP && prScale > PR_FLOOR) {
       prScale = Math.max(PR_FLOOR, prScale - 0.15);
       renderer.setPixelRatio(Q.pixelRatio * prScale);
+      if (composer) composer.setPixelRatio(Q.pixelRatio * prScale);
       prHold = 120;                            // let the new setting settle
     } else if (avg < PR_RISE && prScale < 1) {
       prScale = Math.min(1, prScale + 0.1);
       renderer.setPixelRatio(Q.pixelRatio * prScale);
+      if (composer) composer.setPixelRatio(Q.pixelRatio * prScale);
       prHold = 240;
     }
     ftAcc = ftN = 0;
@@ -1072,13 +1906,24 @@ function animate() {
       location.href = href;
       return;
     }
+  } else if (cineOn) {
+    /* the scroll cinema owns the camera while the hero is pinned (see
+       initScrollCinema); controls and tweens resume the moment it lets go */
+    scrollCine(spSmooth);
   } else if (camTween) {
     camTween.t += dt;
     const p = easeOutCubic(Math.min(1, camTween.t / camTween.dur));
-    camera.position.lerpVectors(camTween.fromP, HOME.pos, p);
-    controls.target.lerpVectors(camTween.fromT, HOME.target, p);
+    /* a tween flies home unless it was given a destination (focusCompany) */
+    camera.position.lerpVectors(camTween.fromP, camTween.toP || HOME.pos, p);
+    controls.target.lerpVectors(camTween.fromT, camTween.toT || HOME.target, p);
     if (camTween.t >= camTween.dur) { camTween = null; controls.enabled = true; }
   } else {
+    if (zoomTween) {
+      zoomTween.t = Math.min(1, zoomTween.t + dt / 0.4);
+      const len = lerp(zoomTween.from, zoomTween.to, easeOutCubic(zoomTween.t));
+      camera.position.sub(controls.target).setLength(len).add(controls.target);
+      if (zoomTween.t >= 1) zoomTween = null;
+    }
     controls.update();
   }
 
@@ -1093,6 +1938,8 @@ function animate() {
     o.rotation.z = Math.sin(t * wd.speed + wd.phase) * wd.amp * (0.4 + gust);
     o.rotation.x = Math.sin(t * wd.speed * 0.7 + wd.phase * 1.3) * wd.amp * 0.5 * gust;
   }
+  if (forestWind) forestWind(t, gust);   // the distant forest sways in its vertex shader
+  updateModelWind(t, gust);              // …and so does every tree from the model library
   for (const f of buntingFlags) {
     const wd = f.userData.wind;
     f.rotation.z = Math.sin(t * wd.speed + wd.phase) * wd.amp * (0.3 + gust * 0.8);
@@ -1110,7 +1957,7 @@ function animate() {
     }
   }
   /* the armillary sphere turns all day; the star above it counter-turns */
-  if (plazaMonument) {
+  if (plazaMonument && plazaMonument.rings) {
     plazaMonument.rings.rotation.y = t * 0.11;
     plazaMonument.globe.rotation.y = t * 0.055;
     plazaMonument.armillary.rotation.y = Math.sin(t * 0.07) * 0.22;
@@ -1168,7 +2015,7 @@ function animate() {
   /* building lift on hover */
   const k1 = Math.min(1, dt * 9);
   for (const b of buildings) {
-    const liftTarget = (b === hovered || b === selected) ? 0.55 : 0;
+    const liftTarget = (b === hovered || b === selected) ? 0.3 : 0;
     b.group.position.y += (b.baseY + liftTarget - b.group.position.y) * k1;   // lift relative to its mountain seat
   }
 
@@ -1185,37 +2032,21 @@ function animate() {
       bl.base * (0.55 + 0.45 * Math.sin(t * bl.speed + bl.phase)) * (0.25 + 0.75 * envMix);
   }
 
-  /* the banners: a slow drift, a breathing bloom, a lift when hovered —
-     and a scale that grows with distance. A sprite shrinks as the camera
-     pulls back, which is exactly wrong for a label you want readable from
-     the overview, so we cancel most of that out and clamp the result. */
+  /* the ground rings: under the cursor the ring comes up — enough to say
+     "clickable", never enough to flash */
   for (const b of buildings) {
-    const bn = b.banner;
-    if (!bn) continue;
     const on = (b === hovered || b === selected);
-    bn.hi = (bn.hi || 0) + ((on ? 1 : 0) - (bn.hi || 0)) * Math.min(1, dt * 7);
-
-    bn.plate.getWorldPosition(bannerPos);
-    const dist = camera.position.distanceTo(bannerPos);
-    /* a plate sized for a 1400px desktop swamps a 375px phone, so the
-       distance compensation is scaled by how much screen there is */
-    const fit = Math.min(1, Math.max(0.46, (wrapEl.clientWidth || 1200) / 1250));
-    const grow = Math.min(2.4 * fit, Math.max(0.92 * fit, dist / 78 * fit));
-    const pop = grow * (1 + bn.hi * 0.14);
-
-    const bob = Math.sin(t * 0.7 + bn.phase) * 0.22;
-    const y = bn.baseY + bob + bn.hi * 0.7 + (pop - 1) * bn.height * 0.5;
-    bn.plate.position.y = y;
-    bn.glow.position.y = y;
-    bn.plate.scale.set(bn.width * pop, bn.height * pop, 1);
-    bn.glow.scale.set(bn.width * 1.5 * pop, bn.height * 2.4 * pop, 1);
-
-    /* the bloom is mostly a night effect, and flares under the cursor */
-    bn.glowMat.opacity = (0.16 + 0.42 * envMix) * (0.85 + 0.35 * Math.sin(t * 1.3 + bn.phase))
-      + bn.hi * 0.45;
-    bn.plateMat.opacity = 0.9 + 0.1 * envMix + bn.hi * 0.1;
+    b.hi = (b.hi || 0) + ((on ? 1 : 0) - (b.hi || 0)) * Math.min(1, dt * 7);
+    if (b.halo) {
+      /* a slow breath, a little stronger after dark, lit up under the cursor */
+      const breath = 0.5 + 0.5 * Math.sin(t * 1.4 + b.halo.userData.phase);
+      b.halo.material.opacity = (0.16 + 0.12 * breath) * (0.8 + 0.4 * envMix) + b.hi * 0.5;
+      b.halo.scale.setScalar(1 + b.hi * 0.06);
+    }
   }
 
+
+  updateLabels();
 
   /* live readout so "does it feel smooth?" can be answered with numbers */
   hudCount++;
@@ -1228,7 +2059,8 @@ function animate() {
     } else if (span >= 1.5) { hudCount = 0; hudLast = t; }   // resumed from a pause
   }
 
-  renderer.render(scene, camera);
+  if (composer) composer.render();
+  else renderer.render(scene, camera);
 }
 
 /* ---------------- loading ----------------
@@ -1268,10 +2100,46 @@ function step(pct) {
   });
 }
 
+/* ---------------- the scroll-down landing sections ----------------
+   The cards and stats below the hero are rendered from the same company
+   data that raised the buildings and filled the finder — one source,
+   three views. */
+function renderLanding() {
+  const grid = document.getElementById('companyGrid');
+  const stats = document.getElementById('districtStats');
+
+  if (grid) {
+    grid.innerHTML = companies.map((c) => {
+      const meta = getIndustryMeta(c.industry);
+      const nm = String(c.name || '?');
+      return '<a class="cl-link" href="company.html?id=' + encodeURIComponent(c.id) + '">' +
+        '<span class="cl-avatar" style="background:' + c.color + '">' + nm.charAt(0).toUpperCase() + '</span>' +
+        '<span class="cl-body"><h3>' + nm + '</h3>' +
+        '<p>' + String(c.tagline || '') + '</p>' +
+        '<span class="cl-ind" style="color:' + meta.color + '">' + meta.label + '</span></span>' +
+        '<span class="cl-go">→</span></a>';
+    }).join('');
+  }
+
+  if (stats) {
+    const industries = new Set(companies.map((c) => c.industry)).size;
+    const years = companies.map((c) => Number(c.founded)).filter(Number.isFinite);
+    const founded = years.length ? Math.min(...years) : null;
+    stats.innerHTML =
+      '<div class="stat"><b>' + companies.length + '</b><span>Companies</span></div>' +
+      '<div class="stat"><b>' + industries + '</b><span>Industries</span></div>' +
+      '<div class="stat"><b>' + (founded || '—') + '</b><span>Established</span></div>' +
+      '<div class="stat"><b>3D</b><span>Living district</span></div>';
+  }
+}
+
 /* ---------------- bootstrap ---------------- */
 async function main() {
   initThree();
-  await step(0.10);
+  /* the model library downloads first: the clouds, the forest, the cars and
+     the buildings are all built from it. The bar counts files as they land. */
+  await loadModels((p) => loadProgress(0.02 + p * 0.22, 'Unpacking the 3D models…'));
+  await step(0.26);
   await buildEnvironment();
   companies = await loadCompanies();
   if (!companies.length) {
@@ -1279,7 +2147,9 @@ async function main() {
   }
   await buildDistrict();
   buildUI();
+  renderLanding();
   initInteraction();
+  initScrollCinema();
   if (window.IntersectionObserver) {
     new IntersectionObserver((en) => { heroVisible = en[0].isIntersecting; },
       { threshold: 0.05 }).observe(wrapEl);
@@ -1290,6 +2160,8 @@ async function main() {
      was composed around, where every company's name plate is readable — and
      the world is already slowly turning — nothing is pre-selected, no card
      pops up, and a stale hash in the address bar is ignored. */
+  frameForViewport();
+  camera.updateProjectionMatrix();
   camera.position.copy(HOME.pos);
   controls.target.copy(HOME.target);
   controls.update();

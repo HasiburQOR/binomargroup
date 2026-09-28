@@ -13,6 +13,7 @@
    ============================================================= */
 import * as THREE from 'three';
 import { mulberry32 } from './city-build.js';
+import { bake } from './models.js';
 
 /* ---------- the puff ------------------------------------------------------
    A lumpy silhouette carved out of overlapping radial blobs, then lit
@@ -240,9 +241,30 @@ export function createWeather(scene, q = {}) {
   const clouds = [];
   const add = (mesh, entry) => { scene.add(mesh); clouds.push(entry); };
 
+  /* modelled cumulus from the library when it loaded: real volume, lit by
+     the sun and the moon like everything else. They share one material, so
+     the day/night tint is set once a frame. A soft emissive lift keeps the
+     shadowed undersides from going black. */
+  const cloudModels = [bake('clouds-a', { length: 1 }), bake('clouds-b', { length: 1 })].filter(Boolean);
+  const cloudMat = new THREE.MeshLambertMaterial({ color: '#ffffff', emissive: new THREE.Color('#9fb2d6') });
+  const modelCloud = (width) => {
+    const v = cloudModels[Math.floor(rand() * cloudModels.length)];
+    const g = new THREE.Group();
+    for (const p of v.parts) {
+      const mesh = new THREE.Mesh(p.geometry, cloudMat);
+      mesh.renderOrder = 6;
+      g.add(mesh);
+    }
+    g.scale.set(width, width * (0.8 + rand() * 0.5), width);
+    g.rotation.y = rand() * Math.PI * 2;
+    g.userData.model = true;
+    return g;
+  };
+  const cloud = (opts, width) => cloudModels.length ? modelCloud(width) : makeCloud(rand, map, opts);
+
   /* fair-weather cumulus riding above the summit */
   for (let i = 0; i < many(9); i++) {
-    const mesh = makeCloud(rand, map);
+    const mesh = cloud(undefined, 24 + rand() * 18);
     const e = {
       mesh, kind: 'cumulus',
       a: rand() * Math.PI * 2,
@@ -257,7 +279,8 @@ export function createWeather(scene, q = {}) {
 
   /* a lower deck the peak pokes through */
   for (let i = 0; i < many(5); i++) {
-    const mesh = makeCloud(rand, map, { rx: 12 + rand() * 9, ry: 2.6, puffs: 44, puffScale: 1.15 });
+    const mesh = cloud({ rx: 12 + rand() * 9, ry: 2.6, puffs: 44, puffScale: 1.15 }, 34 + rand() * 16);
+    if (mesh.userData.model) mesh.scale.y *= 0.6;          // the deck is flatter
     const e = {
       mesh, kind: 'deck',
       a: rand() * Math.PI * 2,
@@ -280,7 +303,8 @@ export function createWeather(scene, q = {}) {
   /* day → night tints. Clouds never vanish at night any more: a thin
      moonlit deck is far cosier than an empty sky. */
   const DAY = { top: new THREE.Color('#ffffff'), bottom: new THREE.Color('#c3d0e6') };
-  const DUSK = { top: new THREE.Color('#8f9fc8'), bottom: new THREE.Color('#3b4668') };
+  /* moonlit, not floodlit: night clouds are dark shapes with a silver top */
+  const DUSK = { top: new THREE.Color('#4b5680'), bottom: new THREE.Color('#161b33') };
   const tmpTop = new THREE.Color(), tmpBot = new THREE.Color();
 
   return {
@@ -289,6 +313,8 @@ export function createWeather(scene, q = {}) {
       const drift = 0.55 + gust * 0.7;
       tmpTop.lerpColors(DAY.top, DUSK.top, mix);
       tmpBot.lerpColors(DAY.bottom, DUSK.bottom, mix);
+      cloudMat.color.copy(tmpTop);
+      cloudMat.emissive.copy(tmpBot).multiplyScalar(0.55);
 
       for (const c of clouds) {
         c.a += c.speed * dt * drift;
@@ -297,6 +323,7 @@ export function createWeather(scene, q = {}) {
           c.y + Math.sin(t * 0.22 + c.bob) * 1.1,
           Math.sin(c.a) * c.r
         );
+        if (c.mesh.userData.model) continue;          // tinted through cloudMat above
         const u = c.mesh.material.uniforms;
         u.uTime.value = t;
         u.uTop.value.copy(tmpTop);
@@ -307,7 +334,7 @@ export function createWeather(scene, q = {}) {
       for (let i = 0; i < cirrus.length; i++) {
         const m = cirrus[i].material;
         m.map.offset.x = t * 0.0016 * (i + 1) * drift;
-        m.opacity = (i === 0 ? 0.55 : 0.38) * (1 - mix * 0.75);
+        m.opacity = (i === 0 ? 0.55 : 0.38) * (1 - mix * 0.92);   // the streaks all but vanish after dark
         m.color.lerpColors(DAY.top, DUSK.top, mix * 0.8);
       }
     }

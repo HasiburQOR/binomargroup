@@ -1,0 +1,12 @@
+# runtime logs
+server-*.log
+
+# editor/backup scratch
+*.bak.js
+*.blend1
+
+# the twin "binomargroup" path inside the repo is the same files via a
+# directory junction — committing it would duplicate the whole repo
+binomargroup/
+
+node_modules/

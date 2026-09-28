@@ -13,10 +13,55 @@
 </head>
 <body>
 
+<!-- the navbar: brand, section links and the map controls all live here,
+     so the 3D hero below it stays clean and owns the whole viewport -->
+<nav class="navbar" aria-label="Site navigation">
+  <a class="nav-brand" href="#hero">
+    <span class="nav-badge">B</span>
+    <span class="nav-title">BINOMAR GROUP<small>Company District · Interactive 3D Map</small></span>
+  </a>
+  <div class="nav-links">
+    <a href="#hero" class="on">District</a>
+    <a href="#companies">Companies</a>
+    <a href="#about">About</a>
+  </div>
+  <div class="nav-spacer"></div>
+  <button class="nav-cta" id="navFind" type="button">🔍 Find a company</button>
+  <div class="hud-actions">
+    <button id="btnFind" class="icon-btn" title="Find a company" aria-label="Find a company"
+            aria-expanded="false" aria-controls="finder">🔍</button>
+    <button id="btnNight" class="icon-btn" title="Toggle day / night" aria-label="Toggle day or night">☀️</button>
+    <button id="btnHome" class="icon-btn" title="Reset view" aria-label="Reset view">⟳</button>
+    <button id="btnFull" class="icon-btn" title="Fullscreen" aria-label="Fullscreen">⛶</button>
+  </div>
+</nav>
+
+<!-- the scroll runway: the hero pins (sticky) inside this taller wrapper, so
+     the first stretch of scrolling keeps the district on screen while city.js
+     plays the 3D → page transition. Its height is set in JS; without JS or
+     with reduced motion it collapses back to a plain hero. -->
+<div class="hero-run" id="heroRun">
 <header class="hero" id="hero">
 <div id="scene"></div>
 <div class="vignette"></div>
 <div id="flyFade" class="fly-fade" aria-hidden="true"></div>
+
+<!-- the scroll-cinema veil: the colour of the page itself, rising over the
+     district near the end of the runway so the 3D dissolves into the site -->
+<div class="hero-curtain" aria-hidden="true"></div>
+
+<!-- a line of story held in the middle of the runway, while the camera cranes up -->
+<div class="hero-caption" aria-hidden="true">
+  <span class="cap-k">ONE GROUP · ONE MOUNTAIN</span>
+  <span class="cap-l">The district keeps its lights on while you scroll —<br>the companies are just below.</span>
+</div>
+
+<!-- names you can always read: HTML tags that follow each rooftop at a
+     fixed, legible size, whatever the distance (placed by city.js) -->
+<div id="mapLabels" class="map-labels"></div>
+
+<!-- phones: one tap flies the camera in to a company -->
+<nav id="companyChips" class="company-chips" aria-label="Fly to a company"></nav>
 
 <div id="loader" class="loader">
   <div class="loader-mark">🏔️</div>
@@ -42,20 +87,13 @@ if (location.protocol === 'file:') {
 }
 </script>
 
-<div class="hud hud-top">
-  <div class="brand">
-    <div class="brand-badge">B</div>
-    <div>
-      <div class="brand-name">BINOMAR GROUP</div>
-      <div class="brand-sub">Company District · Interactive 3D Map</div>
-    </div>
-  </div>
-  <div class="hud-actions">
-    <button id="btnFind" class="icon-btn" title="Find a company" aria-label="Find a company"
-            aria-expanded="false" aria-controls="finder">🔍</button>
-    <button id="btnNight" class="icon-btn" title="Toggle day / night" aria-label="Toggle day or night">☀️</button>
-    <button id="btnHome" class="icon-btn" title="Reset view" aria-label="Reset view">⟳</button>
-    <button id="btnFull" class="icon-btn" title="Fullscreen" aria-label="Fullscreen">⛶</button>
+<div class="hero-overlay" id="heroOverlay">
+  <div class="hero-kicker">BINOMAR GROUP · COMPANY DISTRICT</div>
+  <h1 class="hero-head">The district <span class="grad">after dark</span></h1>
+  <p class="hero-sub">Every company of the group on one living 3D map — orbit the mountain, click a building, meet the brands.</p>
+  <div class="hero-cta">
+    <button class="btn" id="ctaExplore" type="button">🧭 Explore the map</button>
+    <a class="btn ghost2" href="#companies">Our companies</a>
   </div>
 </div>
 
@@ -75,10 +113,19 @@ if (location.protocol === 'file:') {
 <div id="hudLegend" class="hud hud-legend">
   <button id="legendClose" class="legend-x" aria-label="Hide the controls legend">✕</button>
   <span><b>Drag</b> to look</span>
-  <span><b>Scroll</b> to zoom</span>
+  <span class="legend-mouse"><b>Ctrl + scroll</b> to zoom</span>
+  <span class="legend-touch"><b>Pinch</b> to zoom</span>
   <span><b>Click</b> a building</span>
   <span class="legend-key"><b>/</b> to search</span>
 </div>
+
+<!-- the page scrolls through the hero; zooming the map is deliberate -->
+<div class="hud zoom-ctrl" role="group" aria-label="Zoom the map">
+  <button id="btnZoomIn" class="icon-btn" type="button" aria-label="Zoom in">+</button>
+  <button id="btnZoomOut" class="icon-btn" type="button" aria-label="Zoom out">−</button>
+</div>
+<div id="zoomHint" class="zoom-hint" aria-hidden="true">Hold <b>Ctrl</b> and scroll to zoom the map</div>
+<a class="scroll-cue" id="scrollCue" href="#companies">Discover the group <span aria-hidden="true">↓</span></a>
 
 <div id="tooltip" class="tooltip" role="status" aria-live="polite">
   <div class="tt-head">
@@ -89,9 +136,61 @@ if (location.protocol === 'file:') {
     </div>
   </div>
   <div id="ttTagline" class="tt-tagline"></div>
-  <div id="ttCta" class="tt-cta">Click to explore →</div>
+  <div id="ttCta" class="tt-cta">Click to visit →</div>
 </div>
 </header>
+</div>
+
+<!-- below the 3D hero: the companies of the district, rendered by city.js
+     from the same data the 3D buildings and the finder use -->
+<main>
+  <section class="band alt" id="companies">
+    <div class="band-inner">
+      <h2 class="sec-title">Companies of the district</h2>
+      <p class="sec-sub">Open a card for the full profile — or click its building on the map above.</p>
+      <div class="cards" id="companyGrid"></div>
+    </div>
+  </section>
+
+  <section class="band" id="about">
+    <div class="band-inner">
+      <h2 class="sec-title">One group, one mountain</h2>
+      <p class="sec-text">Binomar Group builds and runs travel brands — agencies, tour crafters and destination
+        specialists — side by side. The district above is how we like to think of it: every company with its own
+        building, its own light, on one shared mountain. Drag to look around, scroll to zoom, click a building
+        to step inside.</p>
+      <div class="stat-row" id="districtStats"></div>
+      <div class="cta-row"><a class="btn" href="#hero">🗺️ Back to the 3D map</a></div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <nav>
+    <a href="#hero">District</a> · <a href="#companies">Companies</a> · <a href="#about">About</a>
+  </nav>
+  <div>© 2026 Binomar Group · Company District — interactive 3D map</div>
+  <div>3D models by Quaternius, Poly by Google, Kay Lousberg and other Poly Pizza artists (CC0 / CC-BY) · <a href="assets/models/CREDITS.md">full credits</a></div>
+</footer>
+
+<script>
+/* the hero overlay is a host: it steps aside the moment you reach for the
+   map (or after a count-down), so nothing sits over the 3D view */
+(function () {
+  var o = document.getElementById('heroOverlay');
+  var go = function () { if (o) o.classList.add('faded'); };
+  setTimeout(go, 9000);
+  var sc = document.getElementById('scene');
+  if (sc) sc.addEventListener('pointerdown', go, { once: true });
+  /* the navbar CTA and the hero CTA both open the finder */
+  var wire = function (id) {
+    var b = document.getElementById(id), t = document.getElementById('btnFind');
+    if (b && t) b.addEventListener('click', function () { t.click(); });
+  };
+  wire('navFind');
+  wire('ctaExplore');
+})();
+</script>
 
 <noscript>
   <div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0b1220;color:#eaf1fb;font-family:sans-serif;text-align:center;padding:30px">

@@ -43,7 +43,7 @@ not like scrolling a brochure. Two 3D experiences carry this idea:
 - **Night-first.** The world opens at night because that is when it is at
   its best; warm light against deep navy is the core mood.
 - **Names in the skyline.** The group's name must always be visible and
-  luminous — on the tower facade, on floating plates above every building.
+  luminous — on the tower facade, on the rooftop sign of every building.
 - **Quality as a feature.** Perf, accessibility and mobile are design
   requirements, not afterthoughts (see §8).
 
@@ -99,7 +99,8 @@ binomargroup/
 │   ├── sky.js              ← Milky Way dome, stars, aurora, meteors, moon, day gradient
 │   ├── nature.js           ← trees, conifers, instanced grass, wind leaves, windmill
 │   ├── monument.js         ← plaza landmark: statue + four-faced group sign
-│   ├── banner.js           ← camera-facing floating company name plates
+│   ├── banner.js           ← camera-facing rooftop name signs
+│   ├── buildings.js        ← four company building designs from the models (paint, roofs, click ring)
 │   ├── clouds.js           ← billboard cumulus + cirrus veil
 │   ├── cozy.js             ← fire pit, café string lights, fireflies, warmGlowTexture()
 │   ├── life.js             ← birds, deer, rabbits, villagers, astronomer
@@ -107,7 +108,10 @@ binomargroup/
 │   ├── water.js            ← waterfall, pool, stream (+ culverts where it crosses roads)
 │   ├── road.js             ← lamps & light pools, crash barrier, markings, traffic
 │   ├── quality.js          ← device tier detection → scene budget (one dial)
+│   ├── models.js           ← 3D model library: load, bake/normalise, instance, wind sway
 │   └── company.js          ← detail page renderer
+├── assets/models/         ← .glb models: downloaded (web-optimised) + hq-*.glb headquarters (+ CREDITS.md)
+├── blender/               ← binomar-buildings.blend — source of the hq-*.glb (kept out of the Docker image)
 ├── data/companies.js       ← local company "database" (fallback / demo mode)
 ├── sanity/schema.js        ← Sanity CMS schema + 10-minute setup instructions
 ├── server.mjs              ← one-command local dev server (Node built-ins)
@@ -128,11 +132,11 @@ Defined twice, kept in sync: `data/companies.js` (local) and `sanity/schema.js` 
 | Field | Type | Effect |
 |---|---|---|
 | `id` / slug | string | URL id, building seed (hashes derive architecture from it) |
-| `name` | string | Floating banner + detail page title |
+| `name` | string | Rooftop sign + detail page title |
 | `industry` | enum | Default building style + label colour (`INDUSTRY_META` in `js/data.js`) |
 | `style` | enum | Architecture override: `modern-tower`, `modern-office`, `modern-shop`, `georgian`, `chalet`, `barn`, `hall` |
 | `floors` | 1–14 | Building height |
-| `plot` | number | Sort order; auto-assigned to next free plot |
+| `plot` | number | Sort order and building design (plots 1–4 get the four designs); auto-assigned to next free plot |
 | `featured` | bool | Gold pin + summit-plateau placement |
 | `color` | hex | Brand colour (building + detail page) |
 | `tagline`, `description[]`, `address`, `phone`, `email`, `website`, `founded`, `logo`, `gallery[]` | — | Hover card + detail page content |
@@ -217,18 +221,30 @@ These are deliberate design decisions — **respect them when changing code:**
 - **No two buildings alike.** Dimensions/massing/facades derive from hashes
   of the company id (`getBuildingDims()`); layout and geometry share it.
 - **Draw-call diet.** `compactGroup()` bakes props to one mesh per material;
-  `batchScatter()` bakes undergrowth. Scene runs ~1 700 calls (desktop) /
-  ~1 400 (mobile tier) — keep new content batched.
+  `batchScatter()` bakes undergrowth. With the model library instanced the scene
+  runs ~205 calls (desktop) / ~165 (tiny tier) — keep new content batched.
 - **One quality dial.** `detectQuality()` (js/quality.js) returns a budget
   (pixel ratio, shadows, AA, counts). Never hard-code instance counts.
 - **Adaptive resolution.** Render scale steps down 15 % under ~48 fps
   (floor 60 %); HUD shows live `fps · % res`.
-- **Banners beat boards.** Company names ride camera-facing sprites that
-  counter-scale with distance (0.92–2.4×) — always readable.
+- **Signs beat boards.** Company names ride camera-facing sprites standing
+  on each roof, counter-scaled with distance (0.85–1.9×) and anchored at the
+  bottom so they grow upward, never off the roof — always readable.
+- **Clickable, quietly.** A soft brand-coloured ring breathes on the ground
+  around each building and brightens under the cursor; the sign brightens
+  and the building lifts a touch. No glow effects.
+- **A hero on a page.** The wheel scrolls the page; Ctrl/⌘ + wheel, pinch
+  and the +/− buttons zoom the map. New page content goes in `<main>` as
+  further `section.band` blocks.
 - **Finder is the a11y path.** `/` opens a searchable list of real `<a>`
   links — keyboard + screen-reader route into the canvas.
 - **Honest loading.** Loader reports real progress; `main()` yields between
   build phases so the browser can paint.
+- **Models first, procedural as fallback.** Everything with a model in
+  `assets/models/` is built from it (`js/models.js`); every caller falls back
+  to its procedural builder when `hasModel()` is false. Flora is instanced
+  (~200 draw calls desktop, ~165 tiny tier). New models: add the file,
+  a `MODELS` entry with its credit, and a row in `CREDITS.md`.
 - **Debug hook.** `window.__binomar` → scene/camera/renderer,
   `setNight(0…1)`, `skipIntro()`.
 
@@ -265,7 +281,11 @@ navy, gold accents, luminous branding.
 - [ ] **Basic analytics** (privacy-friendly, e.g. Plausible/Umami on Dokploy).
 
 ### P1 — next iteration
-- [ ] Hand-modeled `.glb` buildings from Blender replacing procedural ones
+- [x] Downloaded `.glb` models replace the procedural trees, animals, cars,
+      clouds and company buildings (`js/models.js`).
+- [x] Bespoke Blender headquarters for the four subsidiaries
+      (`blender/binomar-buildings.blend` → `assets/models/hq-*.glb`).
+- [x] Plaza landmark rebuilt as the Binomar Group HQ tower (`hq-binomar.glb`)
       (drop into `models/`, load with GLTFLoader) — start with the four
       real subsidiaries.
 - [ ] Weather modes (snow/rain) reusing the gust system.

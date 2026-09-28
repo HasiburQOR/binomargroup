@@ -19,9 +19,12 @@ export function detectQuality() {
   const reducedMotion = typeof matchMedia === 'function' &&
     matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  /* a touch device, a small screen, or a modest CPU all mean "go easy" */
+  /* a touch device, a small screen, or a very weak CPU mean "go easy".
+     4 cores is the laptop norm now and handles the full tier fine, so only
+     2 cores or fewer drop down — everyone else keeps full pixel ratio + AA
+     so in-scene text renders clean and sharp */
   const mobile = coarse || window.innerWidth < 820;
-  const low = mobile || cores <= 4;
+  const low = mobile || cores <= 2;
   /* phones with huge pixel ratios are the usual reason a scene like this
      crawls: rendering 3× is nine times the fragment work */
   const tiny = low && (narrow || dpr >= 2.5);
@@ -36,14 +39,21 @@ export function detectQuality() {
     shadowMapSize: low ? 1024 : 2048,
 
     /* scene budgets */
-    grass: tiny ? 900 : low ? 2000 : 7000,
+    grass: tiny ? 2000 : low ? 4800 : 19000,
     leaves: tiny ? 90 : low ? 170 : 420,
     fireflies: tiny ? 60 : low ? 110 : 240,
     traffic: low ? 2 : 5,
     deer: tiny ? 3 : low ? 5 : 9,
     rabbits: tiny ? 4 : low ? 7 : 14,
-    villagers: tiny ? 4 : low ? 6 : 11,
+    villagers: tiny ? 6 : low ? 10 : 18,
     birdFlocks: low ? 2 : 4,
+
+    /* the soft glow of lit windows, lamps and the moon after dark — one full
+       post-processing pass, so phones go without */
+    bloom: !tiny,
+
+    /* the heaviest tree model a device plants (see createFlora in models.js) */
+    floraTris: tiny ? 2600 : low ? 6000 : Infinity,
 
     /* multipliers on the scatter counts */
     forest: tiny ? 0.30 : low ? 0.48 : 1,

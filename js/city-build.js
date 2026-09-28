@@ -8,12 +8,13 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { makeFloatingBanner } from './banner.js';
+import { makeRoofSign } from './banner.js';
 import { getIndustryMeta } from './data.js';
 import {
   shingleTexture, addRoofDetails, addPorchAndTrim, addGarden,
   addModernCrown, addModernEntrance, addRooftopPlant
 } from './detail.js';
+import { makeModelBuilding } from './buildings.js';
 
 /* ---------- tiny deterministic RNG (the city looks identical on every visit) ---------- */
 export function mulberry32(seed) {
@@ -26,7 +27,7 @@ export function mulberry32(seed) {
   };
 }
 
-function seedFromString(s) {
+export function seedFromString(s) {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
   return h >>> 0;
@@ -148,9 +149,129 @@ export function withPads(base, pads) {
   };
 }
 
+/* ---------- the road bed ----------------------------------------------------
+   Sampling the hillside at each edge of the road tilted the carriageway
+   with every cross-slope, and the cars rolled with it. A real mountain road
+   is graded: this cuts and fills a bed into the height function itself.
+   The centreline is sampled and graded (a steady descent, 9 % at most), the
+   ground is held level at that height across the whole carriageway, then
+   eased back into the slope over the next few metres like an embankment.
+   Terrain, ribbon, cars, lamps and rails all read the same H, so they agree. */
+export function withRoadBed(base) {
+  const T0 = -0.13, T1 = 1.16, N = 1600;
+  const px = new Float32Array(N + 1), pz = new Float32Array(N + 1);
+  let ph = new Float32Array(N + 1);
+  for (let i = 0; i <= N; i++) {
+    const p = roadAt(T0 + (T1 - T0) * (i / N));
+    px[i] = p.x; pz[i] = p.z; ph[i] = base(p.x, p.z);
+  }
+  const smooth = (W, passes) => {
+    for (let pass = 0; pass < passes; pass++) {
+      const out = new Float32Array(N + 1);
+      for (let i = 0; i <= N; i++) {
+        let sum = 0, n = 0;
+        for (let j = Math.max(0, i - W); j <= Math.min(N, i + W); j++) { sum += ph[j]; n++; }
+        out[i] = sum / n;
+      }
+      ph = out;
+    }
+  };
+  /* the hillside falls in terraces; a road does not. Take its broad trend
+     (±35 m), make it only ever descend from the summit to the valley, cap
+     the grade at 9 % — the route drops ~58 m over ~1.5 km, under 4 % on
+     average, so the cap only bites on the steep faces — and round off the
+     grade breaks so the cars never lurch */
+  smooth(38, 4);
+  for (let i = 1; i <= N; i++) ph[i] = Math.min(ph[i], ph[i - 1]);
+  const GRADE = 0.09;
+  for (let i = 1; i <= N; i++) {
+    const ds = Math.hypot(px[i] - px[i - 1], pz[i] - pz[i - 1]);
+    ph[i] = Math.max(ph[i], ph[i - 1] - GRADE * ds);
+  }
+  smooth(8, 2);
+  const CELL = 10, grid = new Map();
+  for (let i = 0; i <= N; i++) {
+    const key = Math.floor(px[i] / CELL) + ',' + Math.floor(pz[i] / CELL);
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push(i);
+  }
+  const FLAT = 2.7, BLEND = 8;                      // level across the road, then an embankment
+  return function (x, z) {
+    const h = base(x, z);
+    const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL);
+    let best = Infinity, bi = -1;
+    for (let a = -1; a <= 1; a++) {
+      for (let b = -1; b <= 1; b++) {
+        const list = grid.get((cx + a) + ',' + (cz + b));
+        if (!list) continue;
+        for (const i of list) {
+          const dx = px[i] - x, dz = pz[i] - z, q = dx * dx + dz * dz;
+          if (q < best) { best = q; bi = i; }
+        }
+      }
+    }
+    if (bi < 0 || best >= (FLAT + BLEND) * (FLAT + BLEND)) return h;
+    /* interpolate the profile along the nearer neighbouring segment */
+    const j = bi < N && (bi === 0 ||
+      (px[bi + 1] - x) ** 2 + (pz[bi + 1] - z) ** 2 < (px[bi - 1] - x) ** 2 + (pz[bi - 1] - z) ** 2) ? bi + 1 : bi - 1;
+    const sx = px[j] - px[bi], sz = pz[j] - pz[bi];
+    const u = Math.min(1, Math.max(0, ((x - px[bi]) * sx + (z - pz[bi]) * sz) / (sx * sx + sz * sz || 1)));
+    const road = ph[bi] + (ph[j] - ph[bi]) * u;
+    const d = Math.sqrt(best);
+    if (d <= FLAT) return road;
+    const k = (d - FLAT) / BLEND, s = k * k * (3 - 2 * k);
+    return road + (h - road) * s;
+  };
+}
+
+/* short strokes of lighter and darker grey on a light ground — blades of
+   grass at a few metres, a soft mottle from the overview */
+function grassDetailTexture() {
+  const S = 256, c = document.createElement('canvas');
+  c.width = c.height = S;
+  const x = c.getContext('2d');
+  x.fillStyle = 'rgb(222,222,222)';
+  x.fillRect(0, 0, S, S);
+  const rand = mulberry32(4242);
+  /* soft clumps first, then the blades over them */
+  for (let i = 0; i < 70; i++) {
+    const v = 190 + Math.floor(rand() * 60);
+    x.fillStyle = 'rgba(' + v + ',' + v + ',' + v + ',0.35)';
+    x.beginPath();
+    x.arc(rand() * S, rand() * S, 8 + rand() * 22, 0, Math.PI * 2);
+    x.fill();
+  }
+  x.lineCap = 'round';
+  for (let i = 0; i < 2600; i++) {
+    const px = rand() * S, py = rand() * S;
+    const len = 4 + rand() * 9, lean = (rand() - 0.5) * 5;
+    const v = rand() < 0.55 ? 150 + Math.floor(rand() * 50) : 235 + Math.floor(rand() * 20);
+    x.strokeStyle = 'rgba(' + v + ',' + v + ',' + v + ',0.55)';
+    x.lineWidth = 1 + rand() * 1.2;
+    /* draw each blade three times across the edges so the tile wraps cleanly */
+    for (const ox of [0, -S, S]) {
+      for (const oy of [0, -S, S]) {
+        if (Math.abs(ox) + Math.abs(oy) && (px + ox < -12 || px + ox > S + 12 || py + oy < -12 || py + oy > S + 12)) continue;
+        x.beginPath();
+        x.moveTo(px + ox, py + oy);
+        x.lineTo(px + ox + lean, py + oy - len);
+        x.stroke();
+      }
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 8;
+  return tex;
+}
+
 /* mountain mesh: displaced plane + baked vertex colours
    (meadow → rock on steep faces → snow dusting on ridge crests). */
-export function makeMountain(H) {
+export function makeMountain(H, HC = H) {
+  /* HC is the hillside before the road bed was graded into it: slope and
+     aspect are read from it, so the road's embankments grow grass like the
+     slope they were cut from instead of reading as bare rock scars */
   const SIZE = 430, SEG = 190;
   const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG);
   geo.rotateX(-Math.PI / 2);
@@ -160,8 +281,8 @@ export function makeMountain(H) {
      sunny south flank, cools toward moss in the hollows, breaks to heather
      and scree as it climbs, turns to bare rock on the steep faces and takes
      snow only on the crests. */
-  const meadow = new THREE.Color('#6fae58'), meadowDry = new THREE.Color('#93ad52');
-  const moss = new THREE.Color('#4a7f4e'), heather = new THREE.Color('#7c7a92');
+  const meadow = new THREE.Color('#5cad4a'), meadowDry = new THREE.Color('#8cb44e');
+  const moss = new THREE.Color('#3d8a48'), heather = new THREE.Color('#7c7a92');
   const rock = new THREE.Color('#8b8a93'), rock2 = new THREE.Color('#6a6873');
   const scree = new THREE.Color('#a39d94');
   const snow = new THREE.Color('#eef3f7'), dirt = new THREE.Color('#9a8a6a');
@@ -174,32 +295,39 @@ export function makeMountain(H) {
     const x = pos.getX(i), z = pos.getZ(i);
     const y = H(x, z);
     pos.setY(i, y);
-    const steep = Math.hypot(H(x + 1.4, z) - H(x - 1.4, z), H(x, z + 1.4) - H(x, z - 1.4)) / 2.8;
+    const steep = Math.hypot(HC(x + 1.4, z) - HC(x - 1.4, z), HC(x, z + 1.4) - HC(x, z - 1.4)) / 2.8;
 
     /* two noise fields: one broad for patchiness, one fine for mottling */
     const broad = (Math.sin(x * 0.041 + z * 0.028) + Math.sin(x * 0.019 - z * 0.033)) * 0.25 + 0.5;
     const fine = (Math.sin(x * 0.21 + z * 0.17) + Math.sin(x * 0.07 - z * 0.11)) * 0.25 + 0.5;
 
     /* which way the ground faces: the sun sits off to +x/+z */
-    const nx = (H(x - 1.4, z) - H(x + 1.4, z)) / 2.8;
-    const nz = (H(x, z - 1.4) - H(x, z + 1.4)) / 2.8;
+    const nx = (HC(x - 1.4, z) - HC(x + 1.4, z)) / 2.8;
+    const nz = (HC(x, z - 1.4) - HC(x, z + 1.4)) / 2.8;
     const sunny = Math.max(0, Math.min(1, (nx * 0.72 + nz * 0.5) * 1.6 + 0.5));
 
     tmp.copy(meadow).lerp(moss, broad * 0.55);                 // hollows go mossy
-    tmp.lerp(meadowDry, sunny * 0.5 + fine * 0.14);            // sun-facing dries out
-    if (y < 2.5) tmp.lerp(dirt, 0.26 * (1 - y / 2.5));         // warm valley floor
-    /* heather and scree take over as it climbs */
-    tmp.lerp(heather, smooth(30, 52, y) * (0.28 + broad * 0.34));
-    tmp.lerp(scree, smooth(0.42, 0.72, steep) * smooth(24, 46, y) * 0.55);
+    tmp.lerp(meadowDry, sunny * 0.42 + fine * 0.12);           // sun-facing dries out
+    if (y < 2.5) tmp.lerp(dirt, 0.18 * (1 - y / 2.5));         // warm valley floor
+    /* grass holds the slopes: a touch of heather high up, scree and bare
+       rock only where the ground is genuinely too steep to hold soil */
+    tmp.lerp(heather, smooth(40, 58, y) * (0.08 + broad * 0.1));
+    tmp.lerp(scree, smooth(0.62, 0.92, steep) * smooth(34, 54, y) * 0.28);
 
     tmp2.copy(rock).lerp(rock2, fine);
-    tmp.lerp(tmp2, smooth(0.52, 0.95, steep));                 // rock on steep faces
+    tmp.lerp(tmp2, smooth(0.82, 1.2, steep));                  // rock on the steepest faces
     tmp.lerp(snow, smooth(56.5, 60, y) * smooth(0.18, 0.5, steep) * 0.9);
     colors[i * 3] = tmp.r; colors[i * 3 + 1] = tmp.g; colors[i * 3 + 2] = tmp.b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   geo.computeVertexNormals();
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
+  /* a grass-blade detail texture tiled every four metres: without it the
+     slopes between the woods read as flat painted lawn. It only varies
+     brightness, so the meadow / heather / rock colours above still decide
+     the hue — it just gives every one of them a surface. */
+  const grass = grassDetailTexture();
+  grass.repeat.set(SIZE / 4, SIZE / 4);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, map: grass }));
   mesh.receiveShadow = true;
   return mesh;
 }
@@ -227,8 +355,8 @@ export function makeOuterPlain(innerR, outerR) {
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
   const colors = new Float32Array(pos.count * 3);
-  const meadow = new THREE.Color('#6aa858');    // same grass as the valley floor
-  const wooded = new THREE.Color('#4a7c52');    // the land under the forest
+  const meadow = new THREE.Color('#59ac4b');    // same grass as the valley floor
+  const wooded = new THREE.Color('#3d7a46');    // the land under the forest
   const tmp = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i);
@@ -265,18 +393,21 @@ export function makeDistantForest(scale) {
   /* a mixed wood rather than one shade of green: cool spruce, warm birch,
      olive scrub and the odd turning tree keep the canopy from reading flat */
   const SPECIES = [
-    { lo: '#20452f', hi: '#3d7048', w: 0.30 },   // dark spruce
-    { lo: '#2f5a3c', hi: '#589a56', w: 0.26 },   // mid pine
-    { lo: '#3c5f34', hi: '#79a755', w: 0.18 },   // birch / beech
+    { lo: '#1e5031', hi: '#3f8152', w: 0.30 },   // dark spruce
+    { lo: '#2b613c', hi: '#54a458', w: 0.26 },   // mid pine
+    { lo: '#386732', hi: '#7cb757', w: 0.18 },   // birch / beech
     { lo: '#44562c', hi: '#8a9a4a', w: 0.14 },   // olive scrub
-    { lo: '#5c4a22', hi: '#c08a35', w: 0.08 },   // turning
-    { lo: '#2a4a52', hi: '#4c8080', w: 0.04 }    // blue-green fir
+    { lo: '#5c4a22', hi: '#b8803a', w: 0.05 },   // turning
+    { lo: '#27505c', hi: '#4c8a8a', w: 0.04 }    // blue-green fir
   ];
   const pickSpecies = (v) => {
     let acc = 0;
     for (const sp of SPECIES) { acc += sp.w; if (v <= acc) return sp; }
     return SPECIES[0];
   };
+
+  /* shared uniforms for the whole forest's vertex-shader wind */
+  const windUniforms = { uTime: { value: 0 }, uGust: { value: 1 } };
 
   for (const b of belts) {
     const parts = [];
@@ -305,64 +436,93 @@ export function makeDistantForest(scale) {
       const tone = 0.7 + rnd() * 0.55;
 
       const bits = [];
+      /* shaped like the model trees up close, so the eye does not see two
+         different forests: layered spruces whose trunks hide under the
+         lowest skirt, and broadleaves whose crown is a cluster of faceted
+         lumps sitting low on a stubby trunk — no lollipops on sticks */
       if (conifer) {
-        /* three tiers instead of two, with a leaning spire on some */
-        const tiers = 2 + (rnd() < 0.45 ? 1 : 0);
+        const tiers = 3 + (rnd() < 0.4 ? 1 : 0);
         for (let ti = 0; ti < tiers; ti++) {
-          const k = ti / tiers;
-          const cone = new THREE.ConeGeometry(rr * (1 - k * 0.42), h * (0.62 - k * 0.14), 5);
-          cone.translate(0, h * (0.32 + k * 0.26), 0);
+          const q = ti / tiers;
+          const cone = new THREE.ConeGeometry(rr * (1.05 - q * 0.55), h * (0.42 - q * 0.06), 6);
+          cone.translate(0, h * (0.2 + q * 0.62) + h * 0.2, 0);
           bits.push(cone);
         }
-        if (rnd() < 0.3) {
-          const spire = new THREE.ConeGeometry(rr * 0.3, h * 0.3, 4);
-          spire.rotateZ((rnd() - 0.5) * 0.3);
-          spire.translate(0, h * 0.95, 0);
-          bits.push(spire);
-        }
-      } else {
-        const trunk = new THREE.ConeGeometry(rr * 0.2, h * 0.58, 4);
-        trunk.translate(0, h * 0.29, 0);
+        const trunk = new THREE.CylinderGeometry(rr * 0.09, rr * 0.13, h * 0.25, 4);
+        trunk.translate(0, h * 0.125, 0);
         bits.push(trunk);
-        /* a crown built from two or three offset lobes reads far less
-           like a lollipop than one sphere does */
-        const lobes = 2 + Math.floor(rnd() * 2);
+      } else {
+        const trunk = new THREE.CylinderGeometry(rr * 0.1, rr * 0.16, h * 0.4, 4);
+        trunk.translate(0, h * 0.2, 0);
+        bits.push(trunk);
+        const lobes = 3 + Math.floor(rnd() * 2);
         for (let li = 0; li < lobes; li++) {
-          const lr = rr * (0.72 + rnd() * 0.5);
-          const la = rnd() * Math.PI * 2;
-          const ld = li === 0 ? 0 : rr * (0.35 + rnd() * 0.45);
-          const crown = new THREE.SphereGeometry(lr, 6, 4);
-          crown.scale(1, 0.72 + rnd() * 0.3, 1);
-          crown.translate(Math.cos(la) * ld, h * (0.68 + rnd() * 0.22), Math.sin(la) * ld);
+          const lr = rr * (0.8 + rnd() * 0.45) * (li === 0 ? 1.15 : 1);
+          const la = (li / lobes) * Math.PI * 2 + rnd();
+          const ld = li === 0 ? 0 : rr * (0.45 + rnd() * 0.3);
+          const crown = new THREE.IcosahedronGeometry(lr, 0);
+          crown.scale(1, 0.8 + rnd() * 0.2, 1);
+          crown.translate(Math.cos(la) * ld, h * (li === 0 ? 0.66 : 0.52 + rnd() * 0.16), Math.sin(la) * ld);
           bits.push(crown);
         }
       }
 
       const tmp = new THREE.Color();
+      const tph = rnd() * 6.28;                     // this tree's wind phase
       for (const geo of bits) {
         geo.rotateY(rnd() * Math.PI * 2);
         geo.translate(x, y, z);
         const pp = geo.attributes.position;
         const cols = new Float32Array(pp.count * 3);
+        const sway = new Float32Array(pp.count);
         for (let v = 0; v < pp.count; v++) {
           /* darker in the understory, lighter at the crown */
           const k = Math.min(1, Math.max(0, (pp.getY(v) - y) / Math.max(1, h)));
           tmp.copy(deep).lerp(leaf, k * tone).lerp(haze, b.tint);
           cols[v * 3] = tmp.r; cols[v * 3 + 1] = tmp.g; cols[v * 3 + 2] = tmp.b;
+          /* wind weight for the vertex shader: crowns move, trunks don't */
+          sway[v] = k;
         }
         geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+        geo.setAttribute('aSway', new THREE.BufferAttribute(sway, 1));
+        geo.setAttribute('aPhase', new THREE.BufferAttribute(new Float32Array(pp.count).fill(tph), 1));
         parts.push(geo);
       }
       }
     }
-    const merged = mergeGeometries(parts);
+    /* the crowns are icosahedra (non-indexed) among indexed cones: merge
+       them all as plain triangle soup */
+    const soup = parts.map((g) => (g.index ? g.toNonIndexed() : g));
+    const merged = mergeGeometries(soup);
     for (const g of parts) g.dispose();
-    const mesh = new THREE.Mesh(merged, new THREE.MeshStandardMaterial({
+    for (const g of soup) g.dispose();
+    const mat = new THREE.MeshStandardMaterial({
       vertexColors: true, roughness: 1, flatShading: true
-    }));
+    });
+    /* GPU wind: each belt is one merged mesh, so the sway lives in the
+       vertex shader — driven by the aSway/aPhase attributes baked above
+       and the same layered gust that bends the grass. */
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = windUniforms.uTime;
+      shader.uniforms.uGust = windUniforms.uGust;
+      shader.vertexShader = 'uniform float uTime;\nuniform float uGust;\nattribute float aSway;\nattribute float aPhase;\n' +
+        shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+        {
+          float w = aSway * aSway;
+          float s1 = sin(uTime * 1.35 + aPhase);
+          float s2 = sin(uTime * 0.9 + aPhase * 1.7 + position.z * 0.05);
+          transformed.x += (s1 * 0.45 + s2 * 0.18) * w * uGust;
+          transformed.z += (s2 * 0.36 - s1 * 0.16) * w * uGust;
+        }`);
+    };
+    const mesh = new THREE.Mesh(merged, mat);
     mesh.renderOrder = -1;
     group.add(mesh);
   }
+  group.userData.updateWind = (t, gust) => {
+    windUniforms.uTime.value = t;
+    windUniforms.uGust.value = 0.4 + gust * 0.6;
+  };
   return group;
 }
 
@@ -481,9 +641,13 @@ export function makeRoadRibbon(points, width, mat, H, opts = {}) {
    mountainside beside the spiral road. Scales with company count. */
 export function computeMountainLayout(count) {
   const spots = [];
+  /* the road climbs onto the plateau through the sector from about -0.9 to
+     +1.1 rad (roadAt(-0.09 … 0.05) at r 17–32), so the summit plots share
+     the clear arc beyond it — a building on the carriageway otherwise */
   const plateauN = Math.min(count, 4);
+  const A0 = 1.5, A1 = 5.0;
   for (let i = 0; i < plateauN; i++) {
-    const a = (i / plateauN) * Math.PI * 2 + 0.4;
+    const a = plateauN === 1 ? (A0 + A1) / 2 : A0 + (i / (plateauN - 1)) * (A1 - A0);
     spots.push({ x: Math.cos(a) * 23, z: Math.sin(a) * 23, plateau: true });
   }
   const rem = count - plateauN;
@@ -567,6 +731,47 @@ function makeFacade(colorHex, seed, variant) {
         pane(c * cs + cs * 0.26, r * cs + cs * 0.24, cs * 0.48, cs * 0.52, 0.48);
       }
     }
+  } else if (variant === 4) {
+    /* luxury bronze: big dark panes in a slim champagne mullion grid */
+    const cols = 3, rows = 4, cw = px / cols, rh = px / rows;
+    b.strokeStyle = 'rgba(226,185,111,0.55)';
+    b.lineWidth = 5;
+    for (let c = 0; c <= cols; c++) { b.beginPath(); b.moveTo(c * cw, 0); b.lineTo(c * cw, px); b.stroke(); }
+    for (let r = 0; r <= rows; r++) { b.beginPath(); b.moveTo(0, r * rh); b.lineTo(px, r * rh); b.stroke(); }
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        pane(c * cw + 7, r * rh + 7, cw - 14, rh - 14, 0.42);
+        if (rand() < 0.5) {             // champagne reveal under each floor line
+          b.fillStyle = 'rgba(226,185,111,0.16)';
+          b.fillRect(c * cw + 7, r * rh + rh - 12, cw - 14, 5);
+        }
+      }
+    }
+  } else if (variant === 5) {
+    /* diagrid: a diamond lattice of pale mullions over continuous glass */
+    b.fillStyle = glass;
+    b.fillRect(0, 0, px, px);
+    b.strokeStyle = 'rgba(226,205,150,0.4)';
+    b.lineWidth = 4;
+    const step = px / 5;
+    for (let k = -5; k <= 10; k++) {
+      b.beginPath(); b.moveTo(k * step, 0); b.lineTo(k * step + px, px); b.stroke();
+      b.beginPath(); b.moveTo(k * step, px); b.lineTo(k * step - px, 0); b.stroke();
+    }
+    /* a warm core lit inside a scatter of the diamonds */
+    e.strokeStyle = 'rgba(255,210,130,0.85)';
+    e.lineWidth = 3;
+    for (let r = 0; r < 5; r++) {
+      for (let c = 0; c < 5; c++) {
+        if (rand() < 0.4) {
+          const cx = (c + 0.5) * step, cy = (r + 0.5) * step;
+          e.beginPath();
+          e.moveTo(cx, cy - step * 0.42); e.lineTo(cx + step * 0.42, cy);
+          e.lineTo(cx, cy + step * 0.42); e.lineTo(cx - step * 0.42, cy);
+          e.closePath(); e.stroke();
+        }
+      }
+    }
   } else {
     /* the classic four-by-four grid */
     const cells = 4, cs = px / cells;
@@ -589,7 +794,7 @@ function makeFacade(colorHex, seed, variant) {
 function finishFacade(base, emi) {
   const map = new THREE.CanvasTexture(base);
   const emissiveMap = new THREE.CanvasTexture(emi);
-  for (const t of [map, emissiveMap]) t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  for (const t of [map, emissiveMap]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; }
   map.colorSpace = THREE.SRGBColorSpace;
   return { map, emissiveMap };
 }
@@ -815,22 +1020,26 @@ const KINDS = {
 };
 
 /* ---------- architecture styles ---------------------------------------------
-   A company's `style` field picks the look; DEFAULT_STYLE maps industries
-   to a sensible style when the field is missing. `traditional` buildings
-   are built by makeTraditionalBuilding (pitched roofs, timber/stone),
-   modern ones by makeModernBuilding (glass + roof decor). */
+   The whole district is corporate: every company gets a glass-and-stone
+   office built by makeModernBuilding. A company's `style` field (and the
+   industry defaults below) only chooses the archetype footprint — slim HQ
+   tower, mid-rise office block or broad campus pavilion — while the facade
+   language and massing are hashed per company so no two firms wear the
+   same silhouette. The legacy village names (georgian, chalet, barn,
+   hall) still resolve for old data, but now they too produce offices. */
 const STYLES = {
   'modern-tower':  { kind: 'tower',      traditional: false },
   'modern-office': { kind: 'office',     traditional: false },
   'modern-shop':   { kind: 'shop',       traditional: false },
-  georgian:        { kind: 'house',      traditional: true, facade: 'plaster', roof: '#b4552f', trim: '#7a5230' },
-  chalet:          { kind: 'house',      traditional: true, facade: 'timber',  roof: '#5b6570', trim: '#6e4a2a' },
-  barn:            { kind: 'barn',       traditional: true, facade: 'stone',   roof: '#4f5a66', trim: '#3f4854' },
-  hall:            { kind: 'hall',       traditional: true, facade: 'plaster', roof: '#b4552f', trim: '#7a5230' }
+  georgian:        { kind: 'office',     traditional: false },  // was a plaster house
+  chalet:          { kind: 'tower',      traditional: false },  // was an alpine hut
+  barn:            { kind: 'hall',       traditional: false },  // was a stone barn
+  hall:            { kind: 'hall',       traditional: false }
 };
 const DEFAULT_STYLE = {
   travel: 'modern-tower', tech: 'modern-office', outbound: 'modern-office',
-  dmc: 'georgian', tourism: 'chalet', textiles: 'barn', retail: 'hall',
+  dmc: 'modern-office', tourism: 'modern-tower', textiles: 'modern-shop',
+  retail: 'modern-shop',
   realestate: 'modern-tower', hotel: 'modern-tower', finance: 'modern-tower',
   logistics: 'modern-shop', foods: 'modern-office', pharma: 'modern-office',
   media: 'modern-office', energy: 'modern-office', construction: 'modern-office'
@@ -855,8 +1064,8 @@ export function getBuildingDims(company) {
     d: k.d * S * (0.86 + r() * 0.32),
     floorH: k.floorH * S * (0.92 + r() * 0.2),
     plinth: k.plinth,
-    facade: Math.floor(r() * 4),          // which curtain-wall language
-    massing: Math.floor(r() * 6),         // how the volume is stacked
+    facade: Math.floor(r() * 6),          // which curtain-wall language
+    massing: Math.floor(r() * 10),        // how the volume is stacked
     /* roof and wing come off their own hashes — drawn from the same
        stream they kept landing on the same value for half the village */
     roof: Math.floor(mulberry32(seedFromString(company.id) ^ 0x1b873593)() * 3),
@@ -864,19 +1073,42 @@ export function getBuildingDims(company) {
   };
 }
 
-/* ---------- entrance canopy on the plaza-facing side ---------- */
-function addCanopy(group, w, d, col) {
-  const mat = new THREE.MeshStandardMaterial({ color: col.clone().multiplyScalar(0.75), roughness: 0.6 });
-  const canopy = new THREE.Mesh(new THREE.BoxGeometry(w * 0.55, 0.18, 2.0), mat);
-  canopy.position.set(0, 3.1, d / 2 + 1.0);
-  canopy.castShadow = true;
-  group.add(canopy);
-  const postGeo = new THREE.CylinderGeometry(0.07, 0.07, 3.1, 6);
-  const postMat = new THREE.MeshStandardMaterial({ color: '#475569', roughness: 0.5, metalness: 0.4 });
-  for (const px of [-w * 0.275 + 0.3, w * 0.275 - 0.3]) {
-    const post = new THREE.Mesh(postGeo, postMat);
-    post.position.set(px, 1.55, d / 2 + 1.75);
-    group.add(post);
+/* ---------- bronze entrance portico on the plaza-facing side ----------
+   A deep canopy slab on slim champagne columns, with warm downlight
+   strips under the soffit that come on with the street lamps. */
+function addPortico(group, w, d, col, lampMats) {
+  const bronze = new THREE.MeshStandardMaterial({
+    color: col.clone().lerp(new THREE.Color('#8a6a3b'), 0.55), roughness: 0.4, metalness: 0.7
+  });
+  const champ = new THREE.MeshStandardMaterial({
+    color: '#d9b36a', roughness: 0.28, metalness: 0.85
+  });
+  const front = d / 2;
+  const pw = Math.max(4.5, w * 0.72), pd = 3.0;
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(pw, 0.16, pd), bronze);
+  slab.position.set(0, 2.85, front + pd / 2 - 0.2);
+  slab.castShadow = true;
+  group.add(slab);
+  const fascia = new THREE.Mesh(new THREE.BoxGeometry(pw + 0.14, 0.1, pd + 0.14), champ);
+  fascia.position.set(0, 2.96, front + pd / 2 - 0.2);
+  group.add(fascia);
+  for (const px of [-pw / 2 + 0.25, pw / 2 - 0.25]) {
+    for (const pz of [front + 0.3, front + pd - 0.5]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 2.77, 8), champ);
+      post.position.set(px, 1.385, pz);
+      post.castShadow = true;
+      group.add(post);
+    }
+  }
+  /* warm downlights under the soffit */
+  const glowMat = new THREE.MeshStandardMaterial({
+    color: '#ffe8c0', emissive: new THREE.Color('#ffcf8a'), emissiveIntensity: 0
+  });
+  lampMats.push(glowMat);
+  for (const px of [-pw / 4, 0, pw / 4]) {
+    const down = new THREE.Mesh(new THREE.BoxGeometry(pw / 5, 0.06, 0.34), glowMat);
+    down.position.set(px, 2.75, front + pd / 2 - 0.2);
+    group.add(down);
   }
 }
 
@@ -999,11 +1231,13 @@ function makePitchedRoof(shape, w, d, h, ov, mat) {
 
 
 /* ---------- modern massing -------------------------------------------------
-   A district of identical extruded rectangles looks printed. Six ways to
+   A district of identical extruded rectangles looks printed. Ten ways to
    stack the same floor area, chosen per company: a plain slab, a round
    tower, a stepped ziggurat, twin wings joined by a sky-bridge, a tapered
-   shaft and an L-shaped block with a taller corner. Each returns the volume
-   to raycast against, plus the footprint the crown and rooftop plant sit on. */
+   shaft, an L-shaped block with a taller corner, a cantilevered stack,
+   a gateway arch, a terrace annex and a colonnaded pinnacle. Each returns
+   the volume to raycast against, plus the footprint the crown and
+   rooftop plant sit on. */
 function buildMassing(variant, w, d, height, mats) {
   const { winMat, roofMat, trimMat } = mats;
   const parts = [];
@@ -1082,6 +1316,71 @@ function buildMassing(variant, w, d, height, mats) {
     parts.push(cornice);
     topW = armW; topD = d;
 
+  } else if (variant === 6) {
+    /* cantilevered stack: a wide upper volume riding out over a slim base */
+    const h1 = height * 0.5, h2 = height * 0.5;
+    hit = boxAt(w * 0.78, h1, d * 0.78, 0, h1 / 2, 0);
+    boxAt(w, h2, d * 0.92, -w * 0.11, h1 + h2 / 2, d * 0.05);
+    const corbel = new THREE.Mesh(new THREE.BoxGeometry(w * 0.84, 0.3, d * 0.84), trimMat);
+    corbel.position.y = h1;
+    corbel.castShadow = true;
+    parts.push(corbel);
+    topW = w; topD = d * 0.92;
+
+  } else if (variant === 7) {
+    /* gateway: twin towers joined by bridges under a crown lintel */
+    const tw = w * 0.36, cx = (w - tw) / 2;
+    hit = boxAt(tw, height, d, -cx, height / 2, 0);
+    boxAt(tw, height, d, cx, height / 2, 0);
+    for (const by of [height * 0.55, height - 1.3]) {
+      const bridge = new THREE.Mesh(new THREE.BoxGeometry(w - tw * 2, 1.3, d * 0.55),
+        [winMat, winMat, trimMat, trimMat, winMat, winMat]);
+      bridge.position.y = by;
+      bridge.castShadow = true;
+      parts.push(bridge);
+    }
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(w + 0.2, 0.5, d * 0.62), trimMat);
+    lintel.position.y = height + 0.05;
+    lintel.castShadow = true;
+    parts.push(lintel);
+    topW = tw; topD = d;
+
+  } else if (variant === 8) {
+    /* setback slab with a garden terrace on a front annex */
+    const annH = height * 0.34;
+    hit = boxAt(w * 0.6, height, d, w * 0.18, height / 2, 0);
+    boxAt(w * 0.5, annH, d * 0.66, -w * 0.22, annH / 2, d * 0.12);
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(w * 0.5, 0.22, d * 0.66), roofMat);
+    deck.position.set(-w * 0.22, annH + 0.11, d * 0.12);
+    deck.castShadow = true;
+    parts.push(deck);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(w * 0.5, 0.08, d * 0.66 + 0.3), trimMat);
+    rail.position.set(-w * 0.22, annH + 0.5, d * 0.12);
+    parts.push(rail);
+    topW = w * 0.6; topD = d;
+
+  } else if (variant === 9) {
+    /* colonnaded pinnacle: a slim core between full-height corner columns */
+    const cw = w * 0.62, cd = d * 0.62;
+    hit = boxAt(cw, height, cd, 0, height / 2, 0);
+    for (const ccx of [-w / 2, w / 2]) {
+      for (const ccz of [-d / 2, d / 2]) {
+        const colu = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, height, 8), trimMat);
+        colu.position.set(ccx, height / 2, ccz);
+        colu.castShadow = true;
+        parts.push(colu);
+      }
+    }
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(w + 0.2, 0.32, d + 0.2), trimMat);
+    cap.position.y = height + 0.1;
+    cap.castShadow = true;
+    parts.push(cap);
+    const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.13, height * 0.3, 6), trimMat);
+    spire.position.y = height + 0.3 + height * 0.15;
+    spire.castShadow = true;
+    parts.push(spire);
+    topW = cw; topD = cd;
+
   } else {
     hit = boxAt(w, height, d, 0, height / 2, 0);
   }
@@ -1098,6 +1397,8 @@ export function makeBuilding(company) {
   const st = company.style && STYLES[company.style]
     ? STYLES[company.style]
     : STYLES[DEFAULT_STYLE[company.industry] || 'modern-office'];
+  const fromModels = makeModelBuilding(company, st.kind);   // null when its model did not load
+  if (fromModels) return fromModels;
   return st.traditional ? makeTraditionalBuilding(company, st)
                         : makeModernBuilding(company, st.kind);
 }
@@ -1119,23 +1420,23 @@ function makeModernBuilding(company, kindName) {
     map, emissiveMap,
     emissive: new THREE.Color('#ffffff'),
     emissiveIntensity: 0.05,
-    roughness: 0.65, metalness: 0.15
+    roughness: 0.28, metalness: 0.42          // glassy — picks up the sky
   });
-  const roofMat = new THREE.MeshStandardMaterial({ color: col.clone().multiplyScalar(0.45), roughness: 0.9 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: col.clone().multiplyScalar(0.35), roughness: 0.7 });
 
+  /* champagne-bronze trim — the classic luxury-corporate accent */
   const trimMat = new THREE.MeshStandardMaterial({
-    color: col.clone().lerp(new THREE.Color('#e8eef7'), 0.5), roughness: 0.42, metalness: 0.45
+    color: col.clone().lerp(new THREE.Color('#e2b96f'), 0.5), roughness: 0.3, metalness: 0.75
   });
   const massing = buildMassing(dims.massing, w, d, height, { winMat, roofMat, trimMat });
   for (const m of massing.parts) group.add(m);
   const box = massing.hit;
   box.userData.companyId = company.id;
 
-  addCanopy(group, w, d, col);
-
   const blink = [];
   const wind = [];
   const extraWindows = [], bollardMats = [];
+  addPortico(group, w, d, col, bollardMats);
   const rand = mulberry32(seedFromString(company.id) ^ 0x2545f491);
   const detailCtx = {
     company, w: massing.topW, d: massing.topD, height, floors, col, rand,
@@ -1147,10 +1448,10 @@ function makeModernBuilding(company, kindName) {
   addModernEntrance(group, { ...detailCtx, w, d });
   addRoofDecor(group, company, { w: massing.topW, d: massing.topD, height: height + 0.45, blink, wind });
 
-  /* the name rides above the roof on a camera-facing banner */
-  const banner = makeFloatingBanner(company, {
-    topY: height + (floors >= 7 ? 4.2 : 1.0),
-    width: Math.max(13, Math.min(19, w * 1.7)),
+  /* the name stands on the roof on a camera-facing sign */
+  const banner = makeRoofSign(company, {
+    topY: height + 0.45,
+    width: Math.max(8, Math.min(11, w * 1.2)),
     kicker: getIndustryMeta(company.industry).label
   });
   group.add(banner.group);
@@ -1246,11 +1547,10 @@ function makeTraditionalBuilding(company, st) {
     }
   }
 
-  /* the name rides above the ridge on a camera-facing banner */
-  const banner = makeFloatingBanner(company, {
+  /* the name stands on the ridge on a camera-facing sign */
+  const banner = makeRoofSign(company, {
     topY: totalH + roofH,
-    width: Math.max(12.5, Math.min(18, w * 1.6)),
-    lift: 3.4,
+    width: Math.max(8, Math.min(11, w * 1.2)),
     kicker: getIndustryMeta(company.industry).label
   });
   group.add(banner.group);

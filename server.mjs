@@ -23,7 +23,8 @@ const MIME = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
   '.gif': 'image/gif', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
   '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json',
-  '.webp': 'image/webp', '.woff2': 'font/woff2'
+  '.webp': 'image/webp', '.woff2': 'font/woff2',
+  '.md': 'text/plain; charset=utf-8'
 };
 
 createServer(async (req, res) => {
