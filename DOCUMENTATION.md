@@ -4,7 +4,7 @@
 > project. Written so that **any AI agent (or new developer) can read this one
 > file** and understand the vision, the tech, the constraints and the
 > improvement backlog without reverse-engineering the codebase.
-> Last updated: 2026-09-24.
+> Last updated: 2026-09-28.
 
 ---
 
@@ -107,15 +107,21 @@ binomargroup/
 │   ├── hamlet.js           ← market stalls, inn, chapel, farm, mill, viewpoint
 │   ├── water.js            ← waterfall, pool, stream (+ culverts where it crosses roads)
 │   ├── road.js             ← lamps & light pools, crash barrier, markings, traffic
-│   ├── quality.js          ← device tier detection → scene budget (one dial)
-│   ├── models.js           ← 3D model library: load, bake/normalise, instance, wind sway
+│   ├── quality.js          ← device tier detection (incl. GPU name, memory) → scene budget (one dial)
+│   ├── models.js           ← 3D model library: load (meshopt), dequantise, bake/normalise, instance, wind sway
+│   ├── ambience.js         ← optional synthesised soundscape (wind, crickets, birds, fire) — Web Audio
 │   └── company.js          ← detail page renderer
-├── assets/models/         ← .glb models: downloaded (web-optimised) + hq-*.glb headquarters (+ CREDITS.md)
+├── assets/models/         ← SHIPPED .glb models — simplified + meshopt-compressed (+ CREDITS.md)
+├── assets/models-src/     ← the untouched source .glb files (kept out of the Docker image)
+├── assets/brand/          ← the gold BG monogram: loader, navbar, favicon sizes (from brand-src/)
+├── assets/brand-src/      ← the logo artwork as received (kept out of the Docker image)
+├── assets/logos/          ← subsidiary logos (see README there; set `logo` in data/companies.js)
+├── tools/                 ← optimize-models.mjs, brand-assets.mjs (dev only, dockerignored)
 ├── blender/               ← binomar-buildings.blend — source of the hq-*.glb (kept out of the Docker image)
 ├── data/companies.js       ← local company "database" (fallback / demo mode)
 ├── sanity/schema.js        ← Sanity CMS schema + 10-minute setup instructions
 ├── server.mjs              ← one-command local dev server (Node built-ins)
-├── package.json            ← metadata only (no dependencies)
+├── package.json            ← dev tooling only (gltf-transform, meshoptimizer, sharp) — the site has no deps
 ├── Dockerfile              ← nginx:alpine image — builds the production container
 ├── nginx.conf              ← gzip, asset caching, correct .glb MIME types
 ├── docker-compose.yml      ← Dokploy Compose deployments (traefik labels + dokploy-network)
@@ -313,8 +319,22 @@ navy, gold accents, luminous branding.
 4. **Dokploy Compose deployments** need the `DOKPLOY_DOMAIN` env var and a
    redeploy for domains; **Application** resources manage domains in the UI
    (hot reload, no redeploy).
-5. `package.json` has **no dependencies** — the Docker image is pure nginx
-   and `node_modules` is dockerignored. Do not add npm deps to the site.
+5. The **site** has no npm dependencies — the Docker image is pure nginx
+   and `node_modules` is dockerignored. `package.json` only carries the
+   dev tools that prepare assets (`npm install` once, then
+   `npm run optimize-models` / `npm run brand-assets`).
+8. **Models are generated.** Never edit `assets/models/*.glb` by hand: change
+   or add the source in `assets/models-src/` (and its profile in
+   `tools/optimize-models.mjs`), then run `npm run optimize-models`.
+   The shipped files are quantised; `js/models.js` turns them back into
+   floats as they load, because `bake()` rewrites vertices in world space.
+9. **The hero is pinned for the whole page.** `<main>` lives inside
+   `#heroRun` after a spacer (sized in `initSkyPass`), so the sky stays
+   behind the translucent sections. Any `#hero` link is intercepted and
+   scrolls to the top (a plain anchor would land where the sticky hero sits).
+10. **Quality governor** (`governQuality` in city.js): below ~45 fps the
+   district sheds resolution, then bloom, then shadows. The HUD fps readout
+   shows the tier and what was dropped.
 6. Sample data is **placeholder copy** — contact details, emails and
    addresses in `data/companies.js` are fictional.
 7. The tower GLB carries emissive materials + `KHR_lights_punctual` — glow
@@ -338,6 +358,13 @@ docker build -t binomar-site . && docker run -p 8080:80 binomar-site
 # Debug the live scene from the browser console
 window.__binomar.setNight(1)        # force night
 window.__binomar.skipIntro()        # jump straight to the overview
+window.__binomar.skyTo(0.5)         # preview the sky pass at any point (0–1)
+window.__binomar.quality            # the tier and budgets this device got
+window.__binomar.ambience.state     # the sound engine and its layer levels
+
+# Assets (dev tools — npm install once)
+npm run optimize-models             # assets/models-src → assets/models
+npm run brand-assets                # assets/brand-src/logo-source.jpg → assets/brand/*
 ```
 
 *This document is the project's memory — update it whenever the vision,

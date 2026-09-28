@@ -351,7 +351,10 @@ section[id]{scroll-margin-top:78px}
    makes phones stutter; the veil and the page's own tint do the softening. */
 .hero-drift{display:flex;flex-direction:column;align-items:center;
   transform:translate3d(0,calc(var(--sp,0) * -30vh),0);opacity:calc(1 - var(--sp,0) * 3.4)}
-.map-labels{opacity:calc(1 - clamp(0,(var(--sp,0) - .06) * 4,1))}
+.map-labels{opacity:calc(1 - clamp(0,(var(--sp,0) - .06) * 4,1));transition:opacity .7s ease,visibility .7s}
+/* the name tags wait behind the opening headline and come in as it steps
+   aside (index.html adds .labels-on), so the two never overlap */
+header.hero:not(.labels-on) .map-labels{opacity:0;visibility:hidden}
 header.hero .hud,.company-chips,.scroll-cue:not(.gone){opacity:calc(1 - clamp(0,(var(--sp,0) - .02) * 4,1))}
 .hero-veil{position:absolute;inset:0;z-index:13;pointer-events:none;background:#02040c;
   opacity:clamp(0,(var(--sp,0) - .4) * 1.1,.5)}
@@ -473,7 +476,7 @@ footer.site-footer nav a:hover{color:var(--accent)}
   .hero-run > main{border-radius:0;box-shadow:none;background:var(--night-1)}
   header.hero{position:relative}                 /* nothing pinned without motion */
   .hero-drift{transform:none!important;opacity:1!important}
-  .map-labels,header.hero .hud,.company-chips{opacity:1!important}
+  header.hero.labels-on .map-labels,header.hero .hud,.company-chips{opacity:1!important}
   .reveal{opacity:1;transform:none}
   main .band .reveal,.reveal{transition:none}
 }

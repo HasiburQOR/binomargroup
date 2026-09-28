@@ -1918,8 +1918,16 @@ function updateSkyPass(dt) {
     controls.target.copy(skyFrom.t);
     camera.fov = skyFrom.f;
     camera.updateProjectionMatrix();
-    controls.enabled = true;
     skyFrom = null;
+    if (camTween) {
+      /* a flight asked for from down the page (the finder, a card) waited
+         for the climb to unwind: it starts from here, not from the sky */
+      camTween.fromP.copy(camera.position);
+      camTween.fromT.copy(controls.target);
+      camTween.t = 0;
+    } else {
+      controls.enabled = true;
+    }
   }
   if (heroEl && Math.abs(skySmooth - lastSpSent) > 0.0005) {
     lastSpSent = skySmooth;
@@ -2351,6 +2359,17 @@ function initNavState() {
   const nav = document.querySelector('.navbar');
   const links = [...document.querySelectorAll('.nav-links a[href^="#"]')];
   const sections = links.map((a) => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+  /* every "#hero" link (the brand, "District", "Back to the 3D map") means
+     the top of the page. The hero is pinned (sticky) over the whole read,
+     so a plain anchor jump would land wherever it happens to be pinned —
+     near the bottom — instead of taking you back up to the district. */
+  document.addEventListener('click', (ev) => {
+    const a = ev.target.closest && ev.target.closest('a[href="#hero"]');
+    if (!a) return;
+    ev.preventDefault();
+    scrollTo({ top: 0, behavior: Q.reducedMotion ? 'auto' : 'smooth' });
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+  });
   if (!nav) return;
   nav.classList.add('live');
   let queued = false;

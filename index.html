@@ -189,11 +189,25 @@ if (location.protocol === 'file:') {
    map (or after a count-down), so nothing sits over the 3D view */
 (function () {
   var o = document.getElementById('heroOverlay');
-  var go = function () { if (o) o.classList.add('faded'); };
+  var h = document.getElementById('hero');
+  /* the map's name tags wait behind the headline and come in as it goes,
+     so the two never sit on top of each other (style.css: .labels-on) */
+  var go = function () {
+    if (o) o.classList.add('faded');
+    if (h) h.classList.add('labels-on');
+  };
   /* counted from the opening shot (city.js), not from the loader */
-  addEventListener('binomar:intro', function () { setTimeout(go, 9000); }, { once: true });
+  addEventListener('binomar:intro', function () { setTimeout(go, 6500); }, { once: true });
   var sc = document.getElementById('scene');
   if (sc) sc.addEventListener('pointerdown', go, { once: true });
+  /* reaching for the zoom, or starting to scroll, is reaching for the map too */
+  ['btnZoomIn', 'btnZoomOut', 'btnHome', 'btnFind'].forEach(function (id) {
+    var b = document.getElementById(id);
+    if (b) b.addEventListener('click', go, { once: true });
+  });
+  addEventListener('scroll', function once() {
+    if (scrollY > 30) { go(); removeEventListener('scroll', once); }
+  }, { passive: true });
   /* the navbar CTA and the hero CTA both open the finder */
   var wire = function (id) {
     var b = document.getElementById(id), t = document.getElementById('btnFind');
