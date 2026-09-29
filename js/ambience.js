@@ -249,15 +249,16 @@ export function createAmbience({ onChange } = {}) {
   };
 }
 
-/* ---- the night bed: the real recording from /audio, not a synth ----
-   It is meant to be there from the moment the district appears, but a
-   browser will not let a page make a sound before the visitor has touched
-   anything — so it starts muted at once (that much autoplay is always
-   allowed) and the first touch or key anywhere lifts the mute and lets it
-   fade in under everything. It rides the night mix (the same band the sky
-   crossfades through), thins to nothing when the tab goes to the back,
-   and honours the 🔇 button and a remembered mute. */
-export function createNightBed(src, { volume = 0.32, nightMix = () => 1 } = {}) {
+/* ---- the ambience beds: the real recordings from /audio, not synths ----
+   One carries the night, one the day. Both are meant to be there from the
+   moment the district appears, but a browser will not let a page make a
+   sound before the visitor has touched anything — so each starts muted at
+   once (that much autoplay is always allowed) and the first touch or key
+   anywhere lifts the mute and lets it fade in under everything. Each rides
+   its own band of the env mix (the same band the sky crossfades through),
+   thins to nothing when the tab goes to the back, and honours the 🔇 button
+   and a remembered mute. `level()` returns 0…1: how present this bed is. */
+function createBed(src, { volume = 0.32, level = () => 1 } = {}) {
   const el = document.createElement('audio');
   el.src = src;
   el.loop = true;
@@ -265,7 +266,7 @@ export function createNightBed(src, { volume = 0.32, nightMix = () => 1 } = {}) 
   el.muted = true;                    // the silent start autoplay permits
   el.volume = 0;
   let on = readPref() !== 'off';      // a remembered mute silences it too
-  let gestured = false, level = 0;
+  let gestured = false, lvl = 0;
 
   el.play().catch(() => {});          // begin silent; a touch only lifts the mute
 
@@ -281,16 +282,13 @@ export function createNightBed(src, { volume = 0.32, nightMix = () => 1 } = {}) 
   addEventListener('keydown', wake, true);
 
   const clock = setInterval(() => {
-    /* full by mix .75, gone by .25 — the sky's own crossfade band */
-    const mix = nightMix();
-    const target = on && gestured && !document.hidden
-      ? volume * Math.max(0, Math.min(1, (mix - 0.25) / 0.5)) : 0;
+    const target = on && gestured && !document.hidden ? volume * level() : 0;
     if (target > 0 && el.paused) el.play().catch(() => {});
-    level += (target - level) * 0.12;                    // ≈ a 3 s glide
-    const v = Math.max(0, Math.min(1, level));
+    lvl += (target - lvl) * 0.12;                       // ≈ a 3 s glide
+    const v = Math.max(0, Math.min(1, lvl));
     if (Math.abs(v - el.volume) > 0.004) el.volume = v;
-    if (target === 0 && level < 0.01) {
-      level = 0;
+    if (target === 0 && lvl < 0.01) {
+      lvl = 0;
       if (!el.paused) el.pause();     // silent and idle: no decode work
     }
   }, 150);
@@ -301,4 +299,23 @@ export function createNightBed(src, { volume = 0.32, nightMix = () => 1 } = {}) 
     get playing() { return on && gestured && !el.paused; },
     stop() { on = false; clearInterval(clock); el.pause(); }
   };
+}
+
+/* The night bed: full once the sky is properly dark (mix .75), gone by
+   the last of the light (.25). */
+export function createNightBed(src, { volume = 0.32, nightMix = () => 1 } = {}) {
+  return createBed(src, {
+    volume,
+    level: () => Math.max(0, Math.min(1, (nightMix() - 0.25) / 0.5))
+  });
+}
+
+/* The day bed: the mirror image — full in daylight (mix ≤ .25), fading out
+   as the sky darkens, so the two recordings hand over to each other
+   through the same band the sky itself crossfades through. */
+export function createDayBed(src, { volume = 0.32, dayMix = () => 0 } = {}) {
+  return createBed(src, {
+    volume,
+    level: () => Math.max(0, Math.min(1, (0.75 - dayMix()) / 0.5))
+  });
 }

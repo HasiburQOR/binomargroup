@@ -94,6 +94,7 @@ function normalize(raw) {
     gallery: Array.isArray(raw.gallery) ? raw.gallery.filter(Boolean) : [],
     website: String(raw.website || "").trim(),
     phone: String(raw.phone || "").trim(),
+    whatsapp: String(raw.whatsapp || "").trim(),
     email: String(raw.email || "").trim(),
     address: String(raw.address || "").trim(),
     plot: clampInt(raw.plot, 0, 999, 0),
@@ -110,7 +111,7 @@ async function fetchFromSanity() {
     '*[_type == "company"] | order(plot asc){' +
     ' name, "id": slug.current, industry, style, tagline, description,' +
     ' "logo": logo.asset->url, "gallery": gallery[].asset->url,' +
-    ' website, phone, email, address, plot, floors, color, featured }'
+    ' website, phone, whatsapp, email, address, plot, floors, color, featured }'
   );
   const url = "https://" + cfg.sanityProjectId + ".api.sanity.io/v" +
     cfg.sanityApiVersion + "/data/query/" + cfg.sanityDataset + "?query=" + q;

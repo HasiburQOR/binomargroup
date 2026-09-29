@@ -432,6 +432,11 @@ main .band{max-width:1120px;margin:0 auto;padding:88px 22px}
 main .band .reveal{transition:opacity .7s cubic-bezier(.2,.7,.2,1) calc(var(--i,0) * 60ms),
              transform .9s cubic-bezier(.2,.7,.2,1) calc(var(--i,0) * 60ms)}
 .reveal.in{opacity:1;transform:none}
+/* the cards get a touch more theatre than the plain rise: they swing up
+   off their own bottom edge in perspective, so a row arrives as a wave.
+   The .in override must repeat at id specificity or the base rule wins. */
+#companyGrid .reveal{transform:perspective(900px) translate3d(0,34px,0) rotateX(9deg);transform-origin:50% 100%}
+#companyGrid .reveal.in{transform:none}
 .band.alt{max-width:none;background:linear-gradient(180deg,rgba(22,32,60,.55),rgba(8,14,30,.25));border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .sec-title{font-family:var(--font-display);font-size:clamp(32px,4.8vw,48px);font-weight:600;line-height:1.05;letter-spacing:-.005em;margin:0 0 10px}
 .sec-sub{color:var(--muted);margin:0 0 8px;font-size:15px}
@@ -440,11 +445,31 @@ main .band .reveal{transition:opacity .7s cubic-bezier(.2,.7,.2,1) calc(var(--i,
 .stat b{display:block;font-size:34px;font-weight:800;font-variant-numeric:tabular-nums;background:linear-gradient(135deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent}
 .stat span{color:var(--muted);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase}
 .sec-text{color:#c9d6e8;max-width:780px;line-height:1.85;font-size:14.5px}
-.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;margin-top:36px}
-.cl-link{display:flex;gap:14px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px;color:var(--text);transition:.22s;
-  position:relative;isolation:isolate;overflow:hidden}
+.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:36px}
+/* two by two across the section, one column on narrow screens; each row
+   shares a height, so a longer excerpt stretches its neighbour to match */
+@media (max-width:700px){.cards{grid-template-columns:1fr}}
+/* ---- the card face: dark glass with a wash of its own brand colour ---- */
+.cl-link{display:flex;gap:16px;align-items:center;color:var(--text);transition:.22s;
+  background:radial-gradient(430px 210px at 88% -12%, rgba(var(--brand-rgb,227,189,99),.14), transparent 62%),
+    linear-gradient(165deg, rgba(255,255,255,.05), rgba(255,255,255,.015) 42%, rgba(9,15,31,.42)),
+    var(--panel);
+  border:1px solid var(--line);border-radius:20px;padding:20px 22px;
+  position:relative;isolation:isolate;overflow:hidden;backdrop-filter:blur(9px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 10px 26px rgba(2,6,18,.28)}
 .cl-link:hover{transform:translateY(-4px);border-color:rgba(var(--brand-rgb,227,189,99),.7);
-  box-shadow:0 16px 40px rgba(2,6,18,.5),0 0 34px rgba(var(--brand-rgb,227,189,99),.16)}
+  box-shadow:0 18px 46px rgba(2,6,18,.55), 0 0 46px rgba(var(--brand-rgb,227,189,99),.2), inset 0 1px 0 rgba(255,255,255,.08)}
+/* a gradient ring sits over the plain border and lights up in the brand
+   colour on hover (the ::before/::after pseudos are spoken for) */
+.cl-ring{position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;opacity:0;transition:opacity .3s;
+  background:linear-gradient(135deg, rgba(var(--brand-rgb,227,189,99),.75), rgba(var(--brand-rgb,227,189,99),.12) 34%, transparent 58%, rgba(var(--brand-rgb,227,189,99),.45));
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude}
+.cl-link:hover .cl-ring{opacity:1}
+/* a ghost numeral — 01, 02 … — watermarking the corner */
+.cl-num{position:absolute;top:6px;right:14px;font-family:var(--font-display);font-size:46px;font-weight:800;line-height:1.15;
+  color:transparent;-webkit-text-stroke:1px rgba(255,255,255,.13);pointer-events:none;transition:-webkit-text-stroke-color .3s}
+.cl-link:hover .cl-num{-webkit-text-stroke-color:rgba(var(--brand-rgb,227,189,99),.5)}
 /* a spotlight in the company's own colour, following the cursor (city.js
    writes --mx/--my); it sits under the content, over the card face */
 .cl-link::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;pointer-events:none;opacity:0;
@@ -452,16 +477,102 @@ main .band .reveal{transition:opacity .7s cubic-bezier(.2,.7,.2,1) calc(var(--i,
   transition:opacity .35s}
 .cl-link:hover::before{opacity:1}
 /* while the card leans toward the cursor, it follows quickly — not with the
-   slow, staggered transition it rose in with */
-main .band .cl-link.tilting{transition:transform .14s ease-out,border-color .22s,box-shadow .22s}
-.cl-go{transition:transform .3s cubic-bezier(.2,.7,.2,1)}
-.cl-link:hover .cl-go{transform:translateX(4px)}
-.cl-avatar{width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;color:#fff;flex:none}
+   slow, staggered transition it rose in with (id scope so it outranks the
+   grid's entrance transition above; the filter leg keeps the dim quick) */
+#companyGrid .cl-link.tilting,#companyGrid .cl-link.previewing{transition:transform .14s ease-out,border-color .22s,box-shadow .22s,filter .35s ease}
+.cl-avatar{width:54px;height:54px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;color:#fff;flex:none;
+  box-shadow:0 8px 22px rgba(var(--brand-rgb,227,189,99),.35), inset 0 1px 0 rgba(255,255,255,.28);
+  transition:box-shadow .3s, transform .3s cubic-bezier(.2,.7,.2,1)}
+.cl-link:hover .cl-avatar{box-shadow:0 10px 30px rgba(var(--brand-rgb,227,189,99),.55), inset 0 1px 0 rgba(255,255,255,.32);
+  transform:translateY(-2px) scale(1.05)}
 .cl-body{flex:1;min-width:0}
-.cl-body h3{margin:0;font-size:15.5px}
+.cl-body h3{margin:0 0 2px;font-size:16px;position:relative;display:inline-block;letter-spacing:.01em}
+/* the name grows a brand-coloured flourish beneath it as you arrive */
+.cl-body h3::after{content:"";position:absolute;left:0;bottom:-4px;height:2px;width:0;border-radius:2px;
+  background:linear-gradient(90deg, rgb(var(--brand-rgb,227,189,99)), rgba(var(--brand-rgb,227,189,99),0));
+  transition:width .4s cubic-bezier(.2,.7,.2,1)}
+.cl-link:hover .cl-body h3::after{width:100%}
 .cl-body p{margin:4px 0 7px;color:var(--muted);font-size:12.5px;line-height:1.5}
-.cl-ind{font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
-.cl-go{color:var(--accent);font-size:18px;font-weight:700}
+.cl-ind{display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;padding:4px 10px;border-radius:99px;margin:2px 0 0;
+  border:1px solid color-mix(in srgb, currentColor 45%, transparent);
+  background:color-mix(in srgb, currentColor 13%, transparent)}
+/* the arrow rides in its own little dial, and fills with the brand colour */
+.cl-go{width:38px;height:38px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  color:var(--accent);font-size:16px;font-weight:700;
+  border:1px solid rgba(var(--brand-rgb,227,189,99),.35);background:rgba(var(--brand-rgb,227,189,99),.07);
+  transition:transform .3s cubic-bezier(.2,.7,.2,1), background .25s, color .25s, box-shadow .25s, border-color .25s}
+.cl-link:hover .cl-go{transform:translateX(4px);color:#fff;border-color:transparent;
+  background:linear-gradient(135deg, rgb(var(--brand-rgb,227,189,99)), rgba(var(--brand-rgb,227,189,99),.72));
+  box-shadow:0 8px 22px rgba(var(--brand-rgb,227,189,99),.45)}
+/* ---- the cards tell more of the story ----
+   Every card carries a three-line excerpt of its own description; the
+   full story is one click away on its company page. */
+.cl-body .cl-desc{margin:9px 0 0;color:#a9bad4;font-size:12.5px;line-height:1.7;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+/* ---- the card under the cursor steps forward; the rest fall back ----
+   Crossing the grid dims every card a touch, and the one under the
+   pointer comes back full-colour, lifts and glows in its own brand
+   colour (the border/shadow half lives at .cl-link:hover above, and the
+   spotlight + tilt still follow the cursor on top of this). The
+   transition must repeat the entrance timings exactly — this rule
+   replaces main .band .reveal's transition for cards by id specificity —
+   and adds a quick filter leg for the dim. */
+#companyGrid .cl-link{transition:opacity .7s cubic-bezier(.2,.7,.2,1) calc(var(--i,0) * 60ms),
+  transform .9s cubic-bezier(.2,.7,.2,1) calc(var(--i,0) * 60ms),filter .35s ease}
+#companyGrid:hover .cl-link{filter:saturate(.68) brightness(.78)}
+#companyGrid .cl-link:hover{filter:none;transform:translateY(-4px);z-index:2}
+/* ---- and they arrive with a little theatre ----
+   Once the IntersectionObserver adds .in: a light sweeps once across the
+   card face, the badge pops and the arrow slides home — each staggered by
+   the card's --i index behind the swing itself. */
+.cl-link::after{content:"";position:absolute;top:0;bottom:0;left:0;width:38%;pointer-events:none;opacity:0;
+  background:linear-gradient(100deg,transparent,rgba(235,242,255,.06) 42%,rgba(235,242,255,.13) 50%,rgba(235,242,255,.06) 58%,transparent);
+  transform:translateX(-160%) skewX(-16deg)}
+.cl-link.in::after{animation:clSweep 1.15s cubic-bezier(.25,.6,.25,1) calc(var(--i,0) * 60ms + .3s) both}
+@keyframes clSweep{0%{transform:translateX(-160%) skewX(-16deg);opacity:0}
+  18%{opacity:1}82%{opacity:1}100%{transform:translateX(340%) skewX(-16deg);opacity:0}}
+@keyframes clPop{0%{transform:scale(.35);opacity:0}62%{transform:scale(1.1);opacity:1}100%{transform:scale(1);opacity:1}}
+#companyGrid .cl-link.in .cl-avatar{animation:clPop .6s cubic-bezier(.2,.75,.3,1.2) calc(var(--i,0) * 60ms + .12s) backwards}
+@keyframes clArrow{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
+#companyGrid .cl-link.in .cl-go{animation:clArrow .5s cubic-bezier(.2,.7,.2,1) calc(var(--i,0) * 60ms + .34s) backwards}
+
+/* ---- the hover preview: pause on a card and its full story rises out ----
+   The panel floats above the grid in the company's own colours; the card
+   below stays lit so you can see what you're pointing at. */
+#companyGrid .cl-link.previewing{filter:none;transform:translateY(-4px);z-index:2}
+.cl-pop{position:fixed;z-index:80;border-radius:18px;color:var(--text);cursor:pointer;overflow:hidden;
+  background:radial-gradient(430px 210px at 88% -12%, rgba(var(--brand-rgb,227,189,99),.16), transparent 62%),
+    linear-gradient(165deg, rgba(255,255,255,.06), rgba(255,255,255,.02) 42%, rgba(9,15,31,.6)),
+    rgba(10,16,30,.92);
+  border:1px solid rgba(var(--brand-rgb,227,189,99),.55);
+  box-shadow:0 24px 56px rgba(2,6,18,.55), 0 0 42px rgba(var(--brand-rgb,227,189,99),.16), inset 0 1px 0 rgba(255,255,255,.07);
+  backdrop-filter:blur(14px);padding:14px 16px 12px;
+  opacity:0;visibility:hidden;transform:translateY(12px) scale(.95);transform-origin:50% 85%;
+  /* closing: sink and fade away, staying visible until the end of it */
+  transition:transform .4s cubic-bezier(.4,.6,.4,1), opacity .25s ease,
+    left .45s cubic-bezier(.22,.85,.25,1), top .45s cubic-bezier(.22,.85,.25,1),
+    visibility 0s .4s linear}
+.cl-pop.open{opacity:1;visibility:visible;transform:none;
+  /* opening: this list deliberately omits the closing `visibility` delay —
+     with it, the panel animates while still invisible and then pops in all
+     at once the moment the delay ends */
+  transition:transform .6s cubic-bezier(.22,.85,.25,1), opacity .35s ease,
+    left .45s cubic-bezier(.22,.85,.25,1), top .45s cubic-bezier(.22,.85,.25,1)}
+.cp-head{display:flex;align-items:center;gap:12px}
+.cp-head .cl-avatar{width:44px;height:44px;border-radius:13px;font-size:18px}
+.cp-title{min-width:0;flex:1}
+.cp-title h3{margin:0;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cp-title p{margin:1px 0 0;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cp-head .cl-ind{margin-left:auto;flex:none;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* a few lines of the story, clamped — the profile page has the rest */
+.cp-text{margin-top:9px;font-size:12.5px;line-height:1.6;color:#b9c7dd;
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5;line-clamp:5;overflow:hidden}
+.cp-foot{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px;padding-top:9px;
+  border-top:1px solid rgba(255,255,255,.08);font-size:10.5px;font-weight:800;letter-spacing:.14em;
+  text-transform:uppercase;color:rgb(var(--brand-rgb,227,189,99))}
+@media (prefers-reduced-motion: reduce){
+  .cl-pop{transition:opacity .15s ease}
+}
 .feat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin-top:36px}
 .feat{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px}
 .feat .f-ico{width:46px;height:46px;border-radius:12px;background:rgba(var(--ember-rgb),.12);display:flex;align-items:center;justify-content:center;font-size:21px;margin-bottom:14px}
@@ -492,6 +603,9 @@ footer.site-footer nav a:hover{color:var(--accent)}
   header.hero.labels-on .map-labels,header.hero .hud,.company-chips{opacity:1!important}
   .reveal{opacity:1;transform:none}
   main .band .reveal,.reveal{transition:none}
+  /* none of the card theatre either — the cards are simply there */
+  .cl-link::after{display:none}
+  #companyGrid .cl-link .cl-avatar,#companyGrid .cl-link .cl-go{animation:none}
 }
 
 /* ---------- map labels: readable names that follow the rooftops ----------

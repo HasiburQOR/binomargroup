@@ -107,6 +107,7 @@ export default {
     },
     { name: 'website', title: 'Website URL', type: 'url' },
     { name: 'phone',   title: 'Phone',       type: 'string' },
+    { name: 'whatsapp', title: 'WhatsApp number (digits with country code)', type: 'string' },
     { name: 'email',   title: 'Email',       type: 'string' },
     { name: 'address', title: 'Head office address', type: 'text', rows: 2 },
     {

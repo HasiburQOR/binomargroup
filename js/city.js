@@ -39,7 +39,7 @@ import {
   makeStall, makeInn, makeChapel, makeFarm, makeWatermill, makeViewpoint, makeWell
 } from './hamlet.js';
 import { detectQuality } from './quality.js';
-import { createAmbience, createNightBed } from './ambience.js';
+import { createAmbience, createNightBed, createDayBed } from './ambience.js';
 import { loadCompanies, getIndustryMeta, fillBadge } from './data.js';
 import {
   loadModels, bake, modelGroup, createFlora, hasFlora, updateModelWind
@@ -146,6 +146,7 @@ function writePref(k, v) {
 }
 let ambience = null;
 let nightBed = null;
+let dayBed = null;
 let sky = null, grass = null, traffic = null, leaves = null, windmill = null, weather = null;
 let fireflies = null, birds = null, fire = null, plazaMonument = null;
 let animals = null, villagers = null, astronomer = null, waterfall = null;
@@ -1205,8 +1206,10 @@ function buildUI() {
   /* ambient sound: on from the start, off only when asked (see ambience.js) —
      the engine itself waits for the visitor's first touch. The night bed is
      the same idea with the recording from /audio, softly, from the first
-     moment of the district */
+     moment of the district; the day bed is its daytime twin, riding the same
+     env mix from the other end so daylight has its own recording */
   nightBed = createNightBed('audio/audio.mp3', { nightMix: () => envMix });
+  dayBed = createDayBed('audio/audio-day.mp3', { dayMix: () => envMix });
   const soundBtn = document.getElementById('btnSound');
   if (soundBtn) {
     const show = (on) => {
@@ -1219,6 +1222,7 @@ function buildUI() {
     soundBtn.addEventListener('click', () => {
       ambience.toggle();
       nightBed.enabled = ambience.on;   // one button, one idea of "sound"
+      dayBed.enabled = ambience.on;
     });
   }
   document.getElementById('btnFull').addEventListener('click', () => {
@@ -2478,18 +2482,29 @@ function renderLanding() {
   const stats = document.getElementById('districtStats');
 
   if (grid) {
-    grid.innerHTML = companies.map((c) => {
-      const meta = getIndustryMeta(c.industry);
-      const nm = String(c.name || '?');
-      const rgb = new THREE.Color(c.color || '#e3bd63');
-      const brand = [rgb.r, rgb.g, rgb.b].map((v) => Math.round(v * 255)).join(',');
-      return '<a class="cl-link" style="--brand-rgb:' + brand + '" href="company.html?id=' + encodeURIComponent(c.id) + '">' +
-        '<span class="cl-avatar" data-id="' + encodeURIComponent(c.id) + '"></span>' +
-        '<span class="cl-body"><h3>' + nm + '</h3>' +
-        '<p>' + String(c.tagline || '') + '</p>' +
-        '<span class="cl-ind" style="color:' + meta.color + '">' + meta.label + '</span></span>' +
-        '<span class="cl-go">→</span></a>';
-    }).join('');
+    /* every company an equal card in the 2×2 grid — avatar, tagline,
+       industry and a three-line excerpt of its own description (clamped
+       in CSS); the full story is one click away on the company page.
+       Featured companies read first, the same hierarchy as the district
+       itself (they ring the summit). */
+    grid.innerHTML = [...companies]
+      .sort((a, b) => (b.featured ? 1 : 0) - (a.featured ? 1 : 0))
+      .map((c, i) => {
+        const meta = getIndustryMeta(c.industry);
+        const nm = String(c.name || '?');
+        const rgb = new THREE.Color(c.color || '#e3bd63');
+        const brand = [rgb.r, rgb.g, rgb.b].map((v) => Math.round(v * 255)).join(',');
+        const paras = (Array.isArray(c.description) ? c.description : []).map((p) => String(p));
+        return '<a class="cl-link" data-id="' + encodeURIComponent(c.id) + '" style="--brand-rgb:' + brand + '" href="company.html?id=' + encodeURIComponent(c.id) + '">' +
+          '<span class="cl-ring" aria-hidden="true"></span>' +
+          '<span class="cl-num" aria-hidden="true">' + String(i + 1).padStart(2, '0') + '</span>' +
+          '<span class="cl-avatar" data-id="' + encodeURIComponent(c.id) + '"></span>' +
+          '<span class="cl-body"><h3>' + nm + '</h3>' +
+          '<p>' + String(c.tagline || '') + '</p>' +
+          '<span class="cl-ind" style="color:' + meta.color + '">' + meta.label + '</span>' +
+          (paras[0] ? '<p class="cl-desc">' + paras[0] + '</p>' : '') +
+          '</span><span class="cl-go">→</span></a>';
+      }).join('');
   }
 
   if (stats) {
@@ -2509,7 +2524,7 @@ function renderLanding() {
       fillBadge(el, companies.find((c) => encodeURIComponent(c.id) === el.dataset.id));
     }
   }
-  initCardPolish(grid, stats);
+  initCardPolish(grid, stats, companies);
 }
 
 /* ---------------- the navbar follows the reader ----------------
@@ -2552,7 +2567,7 @@ function initNavState() {
    the card, and on a mouse the card leans a few degrees toward it. Stats:
    the numbers count up the first time they come into view. All of it is
    transform, opacity and two custom properties per card. */
-function initCardPolish(grid, stats) {
+function initCardPolish(grid, stats, companies) {
   const motion = !Q.reducedMotion;
   const finePointer = matchMedia('(hover: hover) and (pointer: fine)').matches;
 
@@ -2584,6 +2599,87 @@ function initCardPolish(grid, stats) {
       if (card) { card.classList.remove('tilting'); card.style.transform = ''; }
       card = null;
     });
+  }
+
+  /* ---- the hover preview: rest on a card and a compact teaser of its story
+     rises out of the grid — a few lines, not the whole profile; the click
+     still gets everything. Fine pointers only: on touch a tap goes straight
+     through, and reduced motion just fades it in. */
+  if (grid && finePointer && Array.isArray(companies) && companies.length) {
+    const byId = new Map(companies.map((c) => [encodeURIComponent(c.id), c]));
+    const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (ch) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+    let pop = null, openCard = null, openT = 0, closeT = 0;
+
+    const hide = () => {
+      clearTimeout(openT); clearTimeout(closeT);
+      if (openCard) { openCard.classList.remove('previewing'); openCard = null; }
+      if (pop) pop.classList.remove('open');
+    };
+    const build = (c) => {
+      const meta = getIndustryMeta(c.industry);
+      /* a teaser, not the whole story: the paragraphs run together and CSS
+         clamps the panel to a few lines — the profile page has everything */
+      const text = (Array.isArray(c.description) ? c.description : []).join(' ');
+      return '<div class="cp-head">' +
+          '<span class="cl-avatar" data-id="' + encodeURIComponent(c.id) + '"></span>' +
+          '<div class="cp-title"><h3>' + esc(c.name) + '</h3><p>' + esc(c.tagline || '') + '</p></div>' +
+          '<span class="cl-ind" style="color:' + esc(meta.color) + '">' + esc(meta.label) + '</span>' +
+        '</div>' +
+        '<div class="cp-text">' + esc(text) + '</div>' +
+        '<div class="cp-foot">Click to open the full profile <span>→</span></div>';
+    };
+    const show = (card) => {
+      const c = byId.get(card.dataset.id);
+      if (!c) return;
+      if (!pop) {
+        pop = document.createElement('div');
+        pop.className = 'cl-pop';
+        pop.addEventListener('pointerenter', () => clearTimeout(closeT));
+        pop.addEventListener('pointerleave', () => { closeT = setTimeout(hide, 120); });
+        pop.addEventListener('click', (ev) => {
+          if (ev.target.closest('[data-contact]')) return;  /* a contact link acts on its own */
+          if (openCard) location.href = openCard.href;      /* anywhere else opens the profile */
+        });
+        document.body.appendChild(pop);
+      }
+      clearTimeout(openT); clearTimeout(closeT);
+      if (openCard && openCard !== card) openCard.classList.remove('previewing');
+      openCard = card;
+      card.classList.remove('tilting');
+      card.style.transform = '';
+      card.classList.add('previewing');
+      pop.style.setProperty('--brand-rgb', card.style.getPropertyValue('--brand-rgb') || '227,189,99');
+      pop.innerHTML = build(c);
+      fillBadge(pop.querySelector('.cl-avatar'), c);
+      /* anchor over the card: just a touch wider than the card itself */
+      const r = card.getBoundingClientRect();
+      const w = Math.max(280, Math.min(innerWidth - 24, Math.round(r.width * 1.06)));
+      pop.style.width = w + 'px';
+      const h = pop.offsetHeight;
+      const left = Math.max(12, Math.min(innerWidth - w - 12, r.left + r.width / 2 - w / 2));
+      const top = Math.max(72, Math.min(innerHeight - h - 12, r.top + r.height / 2 - h / 2));
+      pop.style.left = left + 'px';
+      pop.style.top = top + 'px';
+      /* a frame later the measured, still-hidden panel is ready to animate in */
+      requestAnimationFrame(() => requestAnimationFrame(() => pop.classList.add('open')));
+    };
+    const showSoon = (card) => {
+      clearTimeout(closeT);
+      if (openCard === card && pop && pop.classList.contains('open')) return;
+      clearTimeout(openT);
+      openT = setTimeout(() => show(card), 150);
+    };
+    for (const card of grid.querySelectorAll('.cl-link')) {
+      card.addEventListener('pointerenter', () => showSoon(card));
+      card.addEventListener('pointerleave', () => { closeT = setTimeout(hide, 140); });
+      card.addEventListener('focus', () => show(card));
+      card.addEventListener('blur', hide);
+    }
+    addEventListener('keydown', (ev) => { if (ev.key === 'Escape') hide(); });
+    addEventListener('scroll', hide, { passive: true });
+    addEventListener('resize', hide);
   }
 
   const nums = stats ? [...stats.querySelectorAll('b[data-to]')] : [];
@@ -2657,7 +2753,7 @@ async function main() {
   if (heroOut < 0.5) startIntro();
 
   window.__binomar = {                                           // handy from the console
-    scene, camera, renderer, controls, sky, THREE, quality: Q, ambience, nightBed,
+    scene, camera, renderer, controls, sky, THREE, quality: Q, ambience, nightBed, dayBed,
     focusCompany,
     setNight: (v) => { envTarget = v; envMix = v; applyEnv(v); },
     skipIntro: () => { endIntro(); camTween = null; flight = null; controls.enabled = true; },

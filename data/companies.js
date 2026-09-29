@@ -18,6 +18,7 @@ window.LOCAL_COMPANIES = [
     style: "modern-tower",
     tagline: "Your door to the world.",
     description: [
+      "Travel Door, a leading Travel Agency in Georgia providing comprehensive travel services for both Groups as well as Individuals wishing to explore Caucasus Region since 2017. Our Team consists of highly trained professionals, experienced and educated in the field of travel, tourism and hospitality. We have a capacity to handle over 10000+ travelers monthly with a fleet size of 200+ vehicles. We currently operate in Caucasus region covering Georgia, Armenia and Azerbaijan. Even though Global Pandemic hindered the growth of travel industry and flow of tourists in Georgia, Travel Door maintained the growth momentum with percentage of our customers and partners doubling each year & average annual growth being 133%.",
       "Traveldoor is the flagship travel brand of Binomar Group — a full-service agency designing holidays, honeymoons, corporate trips and adventures across dozens of countries. One conversation, and a complete journey takes shape: flights, stays, transfers and experiences, all harmonised.",
       "With certified consultants, round-the-clock on-trip support and long-standing airline and hotel partnerships, Traveldoor turns complicated itineraries into effortless travel."
     ],
@@ -26,8 +27,8 @@ window.LOCAL_COMPANIES = [
     floors: 9,
     plot: 1,
     featured: true,
-    address: "Traveldoor Tower, Gateway Avenue, Binomar District",
-    phone: "+1 (555) 010-0301",
+    address: "52 Ketevan Dedofali Ave, Tbilisi 0101, Georgia",
+    phone: "+995 511 333 699",
     email: "traveldoor@binomargroup.com",
     website: "https://traveldoor.ge/",
     founded: "2012"
@@ -39,6 +40,8 @@ window.LOCAL_COMPANIES = [
     style: "chalet",
     tagline: "Unforgettable journeys, expertly crafted.",
     description: [
+      "MAQ tourism is a destination Management company operating across Georgia offering a wide range of customized travel experiences — from cultural and historical tours to adventure, culinary, and nature-based packages.",
+      "Whether you’re looking for a guided tour through ancient cities, a trek through breathtaking mountain ranges, or an immersive local experience, we are here to create unforgettable journeys tailored to your interests.",
       "MAQ Tourism designs signature tours and guided experiences for travellers who want more than a checklist. Small groups, hand-picked local guides and itineraries built around stories, food and landscapes.",
       "From cultural city breaks to incentive trips and special-interest tours, MAQ Tourism blends careful planning with room for spontaneity — the way travel should feel."
     ],
@@ -46,10 +49,10 @@ window.LOCAL_COMPANIES = [
     logo: "",                    // e.g. "assets/logos/maq-tourism.svg"
     floors: 4,
     plot: 2,
-    featured: false,
-    address: "MAQ House, Experience Avenue, Binomar District",
-    phone: "+1 (555) 010-0302",
-    email: "maq@binomargroup.com",
+    featured: true,
+    address: "Ketevan Dedopali Avenue 52, Tbilisi, Georgia",
+    phone: "+595 244 144",
+    email: "info@maqtourism.com",
     website: "https://maqtourism.com/",
     founded: "2016"
   },
@@ -60,6 +63,7 @@ window.LOCAL_COMPANIES = [
     style: "georgian",
     tagline: "Discover Georgia, one story at a time.",
     description: [
+      "Georgia is on the shores of the Black Sea at the juncture of Europe and Asia. For ages, Georgia has served the world with its Silk Road. It may be one of the less traveled countries in Europe, but Georgia Tourism is gaining popularity in the last few years. The country is known as the hometown of wine and has three UNESCO sites. The world's oldest wine-producing country has a timeless charm that defines its vibrant towns, picturesque mountain villages, and rough mountain setting. For tourists looking for an upbeat European destination, Georgia tour packages are the best fit. This tiny country is often mistaken as a part of the Middle Eastern country, rather it is a part of Europe. With its ancient sites, warm hospitality, and fascinating wine traditions, there are plenty of tourist places in Georgia that offer rare experiences.",
       "Hashtag Georgia is the group's destination management company for the country of Georgia — Tbilisi's old town, the Caucasus mountains, and the wine regions of Kakheti. We handle ground services, MICE programmes and tailor-made routes for partners worldwide.",
       "Local teams, transparent operations and years of on-the-ground relationships mean every group lands in expert hands — from border to toast."
     ],
@@ -89,9 +93,10 @@ window.LOCAL_COMPANIES = [
     floors: 5,
     plot: 4,
     featured: false,
-    address: "Outbound House, Gateway Avenue, Binomar District",
-    phone: "+1 (555) 010-0304",
-    email: "outbound@binomargroup.com",
+    address: "52 Ketevan Dedofali Ave, Tbilisi, Georgia, 0101",
+    phone: "+995 591 13 61 01",
+    whatsapp: "+995 598 90 33 01",
+    email: "info@traveldoor.ge",
     website: "https://www.facebook.com/outboundtraveldoor",
     founded: "2020"
   }

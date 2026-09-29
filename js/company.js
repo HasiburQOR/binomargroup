@@ -68,7 +68,8 @@ function companyHtml(c, all) {
     <aside class="card">
       <h2>Contact</h2>
       ${contactRow('📍', 'Head office', c.address)}
-      ${contactRow('📞', 'Phone', c.phone, c.phone ? 'tel:' + c.phone.replace(/[^+\d]/g, '') : '')}
+      ${contactRow('📞', 'Phone', c.phone, c.phone ? 'tel:' + c.phone.replace(/[^\d+]/g, '') : '')}
+      ${contactRow('💬', 'WhatsApp', c.whatsapp, c.whatsapp ? 'https://wa.me/' + c.whatsapp.replace(/[^\d]/g, '') : '')}
       ${contactRow('✉️', 'Email', c.email, c.email ? 'mailto:' + c.email : '')}
       ${contactRow('🌐', 'Website', c.website, c.website || '')}
     </aside>

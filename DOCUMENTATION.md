@@ -109,7 +109,8 @@ binomargroup/
 │   ├── road.js             ← lamps & light pools, crash barrier, markings, traffic
 │   ├── quality.js          ← device tier detection (incl. GPU name, memory) → scene budget (one dial)
 │   ├── models.js           ← 3D model library: load (meshopt), dequantise, bake/normalise, instance, wind sway
-│   ├── ambience.js         ← optional synthesised soundscape (wind, crickets, birds, fire) — Web Audio
+│   ├── ambience.js         ← synthesised soundscape (wind, crickets, birds, fire) + the recorded
+│   │                           day/night beds from /audio — Web Audio
 │   └── company.js          ← detail page renderer
 ├── assets/models/         ← SHIPPED .glb models — simplified + meshopt-compressed (+ CREDITS.md)
 ├── assets/models-src/     ← the untouched source .glb files (kept out of the Docker image)
@@ -143,7 +144,7 @@ Defined twice, kept in sync: `data/companies.js` (local) and `sanity/schema.js` 
 | `style` | enum | Architecture override: `modern-tower`, `modern-office`, `modern-shop`, `georgian`, `chalet`, `barn`, `hall` |
 | `floors` | 1–14 | Building height |
 | `plot` | number | Sort order and building design (plots 1–4 get the four designs); auto-assigned to next free plot |
-| `featured` | bool | Gold pin + summit-plateau placement |
+| `featured` | bool | Gold pin + summit-plateau placement; featured companies sort first in the 2×2 companies grid |
 | `color` | hex | Brand colour (building + detail page) |
 | `tagline`, `description[]`, `address`, `phone`, `email`, `website`, `founded`, `logo`, `gallery[]` | — | Hover card + detail page content |
 
@@ -362,6 +363,7 @@ window.__binomar.skyTo(0.5)         # preview the sky pass at any point (0–1)
 window.__binomar.quality            # the tier and budgets this device got
 window.__binomar.ambience.state     # the sound engine and its layer levels
 window.__binomar.nightBed           # the recorded night loop (plays after the first touch)
+window.__binomar.dayBed             # the daytime recording — same crossfade, other end
 
 # Assets (dev tools — npm install once)
 npm run optimize-models             # assets/models-src → assets/models

@@ -88,7 +88,7 @@ Key fields:
 - `industry` → default building style + label colour (see `INDUSTRY_META` in `js/data.js`)
 - `style` → architecture: `modern-tower`, `modern-office`, `modern-shop`, `georgian`, `chalet`, `barn`, `hall` (empty = industry default)
 - `floors` (1–14) → building height
-- `featured: true` → gold floating pin + summit-plateau placement
+- `featured: true` → gold floating pin + summit-plateau placement (featured companies also sort first in the 2×2 companies grid)
 - `color` → brand color (hex), used for the building and the detail page
 
 ## 🔌 Connect the real backend (Sanity CMS, free)
