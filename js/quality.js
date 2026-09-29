@@ -104,10 +104,8 @@ export function detectQuality() {
     scatter: tiny ? 0.3 : low ? 0.5 : 1,
     clouds: tiny ? 0.45 : low ? 0.65 : 1,
 
-    /* sky — the Milky Way is a backdrop across the whole dome; 2048 px is as
-       sharp as it ever reads, and a quarter of the memory of 4096 */
+    /* sky — the Milky Way is a shader (sky.js), so it has no texture budget */
     stars: tiny ? 320 : low ? 520 : 850,
-    milkyWayWidth: 2048,
     aurora: tiny ? 0 : low ? 1 : 3,    // curtains: each is a full fbm shader (see sky.js)
     meteors: tiny ? 1 : low ? 2 : 3
   };

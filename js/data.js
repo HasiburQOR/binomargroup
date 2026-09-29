@@ -25,25 +25,32 @@ export const INDUSTRY_META = {
 };
 
 /* A company's badge, wherever it appears (cards, map tags, the finder, the
-   phone chips, the tooltip): its real logo on a light tile when it has one,
-   its initial on its brand colour when it does not — or when the file fails
-   to load, so a missing logo never leaves a broken image. */
-export function fillBadge(el, c) {
+   phone chips, the tooltip): its logo on its own tile when it has one, its
+   initial on its brand colour when it does not — or when the file fails to
+   load, so a missing logo never leaves a broken image. Badges are small and
+   square, so they take the compact mark (logoMark) when there is one; pass
+   { full: true } for a spot wide enough for the whole logo. The tile is
+   light unless the company sets logoBg (a white logo needs a dark tile). */
+export function fillBadge(el, c, opts = {}) {
   const initial = String((c && c.name) || '?').charAt(0).toUpperCase();
   const plain = () => {
     el.classList.remove('has-logo');
+    el.style.removeProperty('--logo-bg');
     el.style.background = (c && c.color) || '';
     el.textContent = initial;
   };
   el.textContent = '';
-  if (!c || !c.logo) { plain(); return; }
+  const src = c && ((!opts.full && c.logoMark) || c.logo);
+  if (!src) { plain(); return; }
   const img = new Image();
   img.alt = '';
   img.decoding = 'async';
   img.onerror = plain;
-  img.src = c.logo;
+  img.src = src;
   el.classList.add('has-logo');
   el.style.background = '';
+  if (c.logoBg) el.style.setProperty('--logo-bg', c.logoBg);
+  else el.style.removeProperty('--logo-bg');
   el.appendChild(img);
 }
 
@@ -91,12 +98,15 @@ function normalize(raw) {
     tagline: String(raw.tagline || "").trim(),
     description: paragraphs,
     logo: String(raw.logo || "").trim(),
+    logoMark: String(raw.logoMark || "").trim(),
+    logoBg: /^#[0-9a-fA-F]{6}$/.test(String(raw.logoBg || "")) ? raw.logoBg : "",
     gallery: Array.isArray(raw.gallery) ? raw.gallery.filter(Boolean) : [],
     website: String(raw.website || "").trim(),
     phone: String(raw.phone || "").trim(),
     whatsapp: String(raw.whatsapp || "").trim(),
     email: String(raw.email || "").trim(),
     address: String(raw.address || "").trim(),
+    founded: String(raw.founded || "").trim(),
     plot: clampInt(raw.plot, 0, 999, 0),
     floors: clampInt(raw.floors, 1, 14, 3),
     color: /^#[0-9a-fA-F]{6}$/.test(String(raw.color || "")) ? raw.color : meta.color,
@@ -110,8 +120,9 @@ async function fetchFromSanity() {
   const q = encodeURIComponent(
     '*[_type == "company"] | order(plot asc){' +
     ' name, "id": slug.current, industry, style, tagline, description,' +
-    ' "logo": logo.asset->url, "gallery": gallery[].asset->url,' +
-    ' website, phone, whatsapp, email, address, plot, floors, color, featured }'
+    ' "logo": logo.asset->url, "logoMark": logoMark.asset->url, logoBg,' +
+    ' "gallery": gallery[].asset->url,' +
+    ' website, phone, whatsapp, email, address, founded, plot, floors, color, featured }'
   );
   const url = "https://" + cfg.sanityProjectId + ".api.sanity.io/v" +
     cfg.sanityApiVersion + "/data/query/" + cfg.sanityDataset + "?query=" + q;

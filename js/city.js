@@ -39,6 +39,8 @@ import {
   makeStall, makeInn, makeChapel, makeFarm, makeWatermill, makeViewpoint, makeWell
 } from './hamlet.js';
 import { detectQuality } from './quality.js';
+import { createFold } from './fold.js';
+import { installHeightFog } from './heightfog.js';
 import { createAmbience, createNightBed, createDayBed } from './ambience.js';
 import { loadCompanies, getIndustryMeta, fillBadge } from './data.js';
 import {
@@ -178,7 +180,10 @@ const bannerPos = new THREE.Vector3();
 /* the fixed opening angle: the same composing angle the district was built
    around, but close enough that the buildings around the plaza fill the
    first frame and every name plate reads large */
-const HOME = { pos: new THREE.Vector3(94, 102, 94), target: new THREE.Vector3(0, 59, 0) };  // frames the HQ spire with its banner clear of the top edge
+/* the opening view: low over the eastern valley, the HQ spire centred, the
+   statue and the falls down the left slope, the chapel and the windmill on
+   the right and the moon over the right shoulder */
+const HOME = { pos: new THREE.Vector3(143.3, 80, -27.9), target: new THREE.Vector3(0, 63, 0) };
 
 const tooltip = document.getElementById('tooltip');
 const ttAvatar = document.getElementById('ttAvatar');
@@ -192,6 +197,7 @@ const windItems = [];
 
 /* ---------------- three.js core ---------------- */
 function initThree() {
+  installHeightFog();                  // the valley fills with haze (heightfog.js) — before any shader compiles
   scene = new THREE.Scene();
   scene.background = new THREE.Color(ENV.day.sky);
   /* fog pulled in (150–780): the planted slope stops near r≈150 and the
@@ -242,6 +248,22 @@ function initThree() {
   controls.maxPolarAngle = 1.47;
   controls.minDistance = 18;
   controls.maxDistance = 340;
+  /* touch: one finger orbits, two fingers pinch-zoom and twist. The stock
+     two-finger mode also pans, so every pinch dragged the orbit pivot off
+     the district, and a few pinches later the camera was circling an empty
+     field. And a finger cannot be as precise as a wheel: on touch screens
+     the camera stops short of the rooftops instead of diving into them. */
+  controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_ROTATE };
+  if (matchMedia('(pointer: coarse)').matches) controls.minDistance = 32;
+  /* OrbitControls captures the first finger and releases it when the last
+     one lifts; on mobile browsers either call can throw for a pointer the
+     browser has already cancelled (a swipe it took over as a scroll), and a
+     throw in its pointer-up handler leaves it stuck mid-gesture — the map
+     then spins or zooms on the next touch. Make both calls forgiving. */
+  for (const fn of ['setPointerCapture', 'releasePointerCapture']) {
+    const call = renderer.domElement[fn].bind(renderer.domElement);
+    renderer.domElement[fn] = (id) => { try { call(id); } catch (e) { /* pointer already gone */ } };
+  }
   /* every visit opens on the same fixed overview — the angle the whole
      district was composed around, where every name plate reads — and the
      world is already turning: one gentle lap roughly every two minutes */
@@ -1785,8 +1807,13 @@ function initInteraction() {
     touches.add(ev.pointerId);
     syncTouchZoom();
   }, true);
+  /* listened for on the whole window: a finger that lifts off over a name
+     tag or the page must still be forgotten, or the next single-finger
+     touch counts as a second one and pinches instead of turning */
   for (const type of ['pointerup', 'pointercancel']) {
-    wrapEl.addEventListener(type, (ev) => { touches.delete(ev.pointerId); syncTouchZoom(); }, true);
+    addEventListener(type, (ev) => {
+      if (touches.delete(ev.pointerId)) syncTouchZoom();
+    }, true);
   }
 
   const zoomBtn = (id, f) => {
@@ -1967,14 +1994,21 @@ function flyHome() {
   controls.enabled = false;
 }
 
+let lastW = 0, lastH = 0;
 function onResize() {
   const w = wrapEl.clientWidth || 1, h = wrapEl.clientHeight || 1;
+  /* a phone fires resize every time its address bar slides in or out while
+     scrolling, though the hero (sized in svh) has not changed. Resizing the
+     renderer anyway reallocates the canvas and flashes a blank frame. */
+  if (w === lastW && h === lastH) return;
+  lastW = w; lastH = h;
   camera.aspect = w / h;
   if (!flight) frameForViewport();
   camera.updateProjectionMatrix();
   for (const p of pins) p.w = 0;              // re-measure the labels at the new size
   renderer.setSize(w, h);
   if (composer) composer.setSize(w, h);
+  if (fold) fold.setSize(w, h);
 }
 
 /* ---------------- the sky pass: 3D district → page ----------------
@@ -1988,6 +2022,7 @@ function onResize() {
 let heroOut = 0;                              // how far the visitor has left the map, 0..1
 let skyOK = false, skyTarget = 0, skySmooth = 0, skyOn = false, skyFrom = null, lastSpSent = -1;
 let sheetUp = false;                          // the page covers the hero: the sky is a backdrop
+let fold = null, foldOpen = 1, foldBlank = false;  // the accordion fold (fold.js): share still unfolded
 let underTick = 0, underAcc = 0;             // the backdrop's reduced frame rate (animate)
 const heroEl = document.getElementById('hero');
 const skyPos = new THREE.Vector3(), skyTgt = new THREE.Vector3();
@@ -2074,9 +2109,19 @@ function markReveals() {
   els.forEach((el) => el.classList.add('reveal'));
   for (const g of document.querySelectorAll('#companyGrid, #districtStats'))
     [...g.children].forEach((c, i) => c.style.setProperty('--i', Math.min(i, 10)));
-  if (!window.IntersectionObserver) { els.forEach((el) => el.classList.add('in')); return; }
+  if (!window.IntersectionObserver) { els.forEach((el) => el.classList.add('in', 'settled')); return; }
   const io = new IntersectionObserver((entries) => {
-    for (const en of entries) if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    for (const en of entries) {
+      if (!en.isIntersecting) continue;
+      const el = en.target;
+      el.classList.add('in');
+      io.unobserve(el);
+      /* a card drops its slow, staggered entrance timing once it has landed
+         (style.css: .cl-link.settled) */
+      if (el.classList.contains('cl-link')) {
+        setTimeout(() => el.classList.add('settled'), 950 + 70 * (+el.style.getPropertyValue('--i') || 0));
+      }
+    }
   }, { threshold: 0.05, rootMargin: '0px 0px -6% 0px' });
   els.forEach((el) => io.observe(el));
 }
@@ -2095,8 +2140,13 @@ function initSkyPass() {
      the page simply follows the hero. */
   const page = run.querySelector('main');
   const spacer = run.querySelector('.sky-spacer');
-  let pass = 0;
+  let pass = 0, runW = 0, runH = 0;
+  /* sized once, and again only for a real resize: a phone's address bar
+     sliding in and out mid-scroll changes innerHeight by ~60 px, and
+     re-sizing the runway then shifted the page under the finger */
   const sizeRunway = () => {
+    if (innerWidth === runW && Math.abs(innerHeight - runH) < 160) return;
+    runW = innerWidth; runH = innerHeight;
     pass = motion ? Math.round(innerHeight * (innerWidth < 760 ? 1.35 : 1.6)) : 0;
     if (spacer) spacer.style.height = motion ? Math.max(0, pass - heroEl.offsetHeight) + 'px' : '0px';
     if (page) page.style.marginTop = motion && spacer ? '' : '0px';
@@ -2107,7 +2157,12 @@ function initSkyPass() {
     const total = pass || heroEl.offsetHeight || 1;
     heroOut = Math.min(1, Math.max(0, scrollY / total));
     if (motion) skyTarget = heroOut;
-    sheetUp = !!page && page.getBoundingClientRect().top <= heroEl.getBoundingClientRect().top + 2;
+    if (!page) return;
+    const pt = page.getBoundingClientRect().top, hr = heroEl.getBoundingClientRect();
+    sheetUp = pt <= hr.top + 2;
+    /* the fold follows the page itself, not the eased --sp, so its bottom
+       crease always sits on the page's leading edge (a few px under it) */
+    foldOpen = Math.min(1, Math.max(0, (pt - hr.top + 10) / (hr.height || 1)));
   };
   addEventListener('scroll', measure, { passive: true });
   addEventListener('resize', () => { sizeRunway(); measure(); });
@@ -2115,6 +2170,9 @@ function initSkyPass() {
   if (motion) {
     skyOK = true;
     skySmooth = skyTarget;                    // a reload mid-page must not replay it
+    const w = wrapEl.clientWidth || 1, h = wrapEl.clientHeight || 1;
+    fold = createFold(renderer, { panels: 4, samples: Q.antialias ? 4 : 0 });
+    fold.setSize(w, h);
   }
   markReveals();
 }
@@ -2128,6 +2186,7 @@ function setResolution(s) {
   blackboxLog('gov-res', Math.round(s * 100) + '% resolution');
   renderer.setPixelRatio(Q.pixelRatio * prScale);
   if (composer) composer.setPixelRatio(Q.pixelRatio * prScale);
+  if (fold) fold.setSize(wrapEl.clientWidth || 1, wrapEl.clientHeight || 1);
 }
 
 function dropShadows() {
@@ -2222,7 +2281,15 @@ function animateFrame(rawDt, dt, t) {
   }
   if (!heroVisible) return; // hero scrolled away — pause rendering, save GPU
 
-  /* behind the page the sky is a backdrop seen through translucent
+  if (sheetUp && fold) {
+    /* folded all the way: nothing of the district is left to see, so it
+       paints the page colour once and then rests until you scroll back */
+    updateSkyPass(dt);
+    if (!foldBlank) { fold.renderBlank(); foldBlank = true; }
+    return;
+  }
+  foldBlank = false;
+  /* without the fold (reduced motion), behind the page the sky is a backdrop seen through translucent
      sections: a third of the frames is plenty for drifting stars and
      clouds, and the time of the skipped ones is carried into the next */
   if (sheetUp) {
@@ -2430,7 +2497,22 @@ function animateFrame(rawDt, dt, t) {
 
   /* the bloom pass only earns its cost after dark: by day it is a whisper
      (applyEnv), so the frame goes straight to the canvas instead */
-  if (composer && !bloomOff && envMix > 0.15) composer.render();
+  const bloomOn = composer && !bloomOff && envMix > 0.15;
+  if (fold && foldOpen < 0.999) {
+    /* mid-fold: finish the frame off-screen, then fold it (fold.js) */
+    if (bloomOn) {
+      composer.renderToScreen = false;
+      composer.render();
+      composer.renderToScreen = true;
+      fold.render(composer.readBuffer.texture, foldOpen, true);
+    } else {
+      renderer.setRenderTarget(fold.target);
+      renderer.render(scene, camera);
+      fold.render(fold.target.texture, foldOpen, false);
+    }
+    return;
+  }
+  if (bloomOn) composer.render();
   else renderer.render(scene, camera);
 }
 
@@ -2482,11 +2564,17 @@ function renderLanding() {
   const stats = document.getElementById('districtStats');
 
   if (grid) {
-    /* every company an equal card in the 2×2 grid — avatar, tagline,
-       industry and a three-line excerpt of its own description (clamped
-       in CSS); the full story is one click away on the company page.
-       Featured companies read first, the same hierarchy as the district
-       itself (they ring the summit). */
+    /* every company an equal card in the 2×2 grid: a brand-coloured view
+       with its initial over the district's ridge, and a sheet with the name
+       that slides up on hover to show a few lines of its story (style.css,
+       .cl-link). Featured companies read first, the same hierarchy as the
+       district itself (they ring the summit). */
+    const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (ch) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+    const ridge = '<svg class="cl-ridge" viewBox="0 0 400 100" preserveAspectRatio="none" aria-hidden="true">' +
+      '<path class="r1" d="M0 70L40 52L78 62L120 30L160 50L200 18L236 44L270 34L312 58L352 40L400 56V100H0Z"/>' +
+      '<path class="r2" d="M0 88L50 74L96 82L150 62L196 78L244 66L292 84L340 70L400 80V100H0Z"/></svg>';
     grid.innerHTML = [...companies]
       .sort((a, b) => (b.featured ? 1 : 0) - (a.featured ? 1 : 0))
       .map((c, i) => {
@@ -2495,15 +2583,29 @@ function renderLanding() {
         const rgb = new THREE.Color(c.color || '#e3bd63');
         const brand = [rgb.r, rgb.g, rgb.b].map((v) => Math.round(v * 255)).join(',');
         const paras = (Array.isArray(c.description) ? c.description : []).map((p) => String(p));
-        return '<a class="cl-link" data-id="' + encodeURIComponent(c.id) + '" style="--brand-rgb:' + brand + '" href="company.html?id=' + encodeURIComponent(c.id) + '">' +
-          '<span class="cl-ring" aria-hidden="true"></span>' +
-          '<span class="cl-num" aria-hidden="true">' + String(i + 1).padStart(2, '0') + '</span>' +
-          '<span class="cl-avatar" data-id="' + encodeURIComponent(c.id) + '"></span>' +
-          '<span class="cl-body"><h3>' + nm + '</h3>' +
-          '<p>' + String(c.tagline || '') + '</p>' +
-          '<span class="cl-ind" style="color:' + meta.color + '">' + meta.label + '</span>' +
-          (paras[0] ? '<p class="cl-desc">' + paras[0] + '</p>' : '') +
-          '</span><span class="cl-go">→</span></a>';
+        const id = encodeURIComponent(c.id);
+        return '<a class="cl-link" data-id="' + id + '" style="--brand-rgb:' + brand + '" href="company.html?id=' + id + '">' +
+          '<span class="cl-media" aria-hidden="true">' +
+            '<span class="cl-num">' + String(i + 1).padStart(2, '0') + '</span>' +
+            /* the whole logo on a frosted plate when there is one, the
+               big ghost initial when there is not */
+            (c.logo ? '<span class="cl-logo" data-id="' + id + '"></span>'
+                    : '<span class="cl-glyph">' + esc(nm.charAt(0).toUpperCase()) + '</span>') + ridge +
+          '</span>' +
+          '<span class="cl-sheet">' +
+            '<span class="cl-avatar" data-id="' + id + '"></span>' +
+            '<span class="cl-go" aria-hidden="true">→</span>' +
+            '<h3>' + esc(nm) + '</h3>' +
+            '<p class="cl-tag">' + esc(c.tagline || '') + '</p>' +
+            '<span class="cl-meta">' +
+              '<span class="cl-ind" style="color:' + esc(meta.color) + '">' + esc(meta.label) + '</span>' +
+              (c.founded ? '<span class="cl-since">Since <b>' + esc(c.founded) + '</b></span>' : '') +
+            '</span>' +
+            '<span class="cl-more">' +
+              (paras[0] ? '<p class="cl-desc">' + esc(paras[0]) + '</p>' : '') +
+              '<span class="cl-cta">Open the full profile <i>→</i></span>' +
+            '</span>' +
+          '</span></a>';
       }).join('');
   }
 
@@ -2522,6 +2624,9 @@ function renderLanding() {
   if (grid) {
     for (const el of grid.querySelectorAll('.cl-avatar')) {
       fillBadge(el, companies.find((c) => encodeURIComponent(c.id) === el.dataset.id));
+    }
+    for (const el of grid.querySelectorAll('.cl-logo')) {
+      fillBadge(el, companies.find((c) => encodeURIComponent(c.id) === el.dataset.id), { full: true });
     }
   }
   initCardPolish(grid, stats, companies);
@@ -2563,124 +2668,10 @@ function initNavState() {
 }
 
 /* ---------------- polish for the sections below the hero ----------------
-   Cards: a spotlight in the company's own colour follows the cursor across
-   the card, and on a mouse the card leans a few degrees toward it. Stats:
-   the numbers count up the first time they come into view. All of it is
-   transform, opacity and two custom properties per card. */
+   The cards' hover is pure CSS (style.css, .cl-link). Stats: the numbers
+   count up the first time they come into view. */
 function initCardPolish(grid, stats, companies) {
   const motion = !Q.reducedMotion;
-  const finePointer = matchMedia('(hover: hover) and (pointer: fine)').matches;
-
-  if (grid && finePointer) {
-    let card = null, raf = 0, px = 0, py = 0;
-    const paint = () => {
-      raf = 0;
-      if (!card) return;
-      const r = card.getBoundingClientRect();
-      const x = (px - r.left) / r.width, y = (py - r.top) / r.height;
-      card.style.setProperty('--mx', (x * 100).toFixed(1) + '%');
-      card.style.setProperty('--my', (y * 100).toFixed(1) + '%');
-      if (motion) {
-        card.style.transform = 'perspective(900px) translateY(-4px) rotateX(' +
-          ((0.5 - y) * 7).toFixed(2) + 'deg) rotateY(' + ((x - 0.5) * 9).toFixed(2) + 'deg)';
-      }
-    };
-    grid.addEventListener('pointermove', (ev) => {
-      const c = ev.target.closest('.cl-link');
-      if (c !== card) {
-        if (card) { card.classList.remove('tilting'); card.style.transform = ''; }
-        card = c;
-        if (card) card.classList.add('tilting');
-      }
-      px = ev.clientX; py = ev.clientY;
-      if (!raf) raf = requestAnimationFrame(paint);
-    });
-    grid.addEventListener('pointerleave', () => {
-      if (card) { card.classList.remove('tilting'); card.style.transform = ''; }
-      card = null;
-    });
-  }
-
-  /* ---- the hover preview: rest on a card and a compact teaser of its story
-     rises out of the grid — a few lines, not the whole profile; the click
-     still gets everything. Fine pointers only: on touch a tap goes straight
-     through, and reduced motion just fades it in. */
-  if (grid && finePointer && Array.isArray(companies) && companies.length) {
-    const byId = new Map(companies.map((c) => [encodeURIComponent(c.id), c]));
-    const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (ch) => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-    }[ch]));
-    let pop = null, openCard = null, openT = 0, closeT = 0;
-
-    const hide = () => {
-      clearTimeout(openT); clearTimeout(closeT);
-      if (openCard) { openCard.classList.remove('previewing'); openCard = null; }
-      if (pop) pop.classList.remove('open');
-    };
-    const build = (c) => {
-      const meta = getIndustryMeta(c.industry);
-      /* a teaser, not the whole story: the paragraphs run together and CSS
-         clamps the panel to a few lines — the profile page has everything */
-      const text = (Array.isArray(c.description) ? c.description : []).join(' ');
-      return '<div class="cp-head">' +
-          '<span class="cl-avatar" data-id="' + encodeURIComponent(c.id) + '"></span>' +
-          '<div class="cp-title"><h3>' + esc(c.name) + '</h3><p>' + esc(c.tagline || '') + '</p></div>' +
-          '<span class="cl-ind" style="color:' + esc(meta.color) + '">' + esc(meta.label) + '</span>' +
-        '</div>' +
-        '<div class="cp-text">' + esc(text) + '</div>' +
-        '<div class="cp-foot">Click to open the full profile <span>→</span></div>';
-    };
-    const show = (card) => {
-      const c = byId.get(card.dataset.id);
-      if (!c) return;
-      if (!pop) {
-        pop = document.createElement('div');
-        pop.className = 'cl-pop';
-        pop.addEventListener('pointerenter', () => clearTimeout(closeT));
-        pop.addEventListener('pointerleave', () => { closeT = setTimeout(hide, 120); });
-        pop.addEventListener('click', (ev) => {
-          if (ev.target.closest('[data-contact]')) return;  /* a contact link acts on its own */
-          if (openCard) location.href = openCard.href;      /* anywhere else opens the profile */
-        });
-        document.body.appendChild(pop);
-      }
-      clearTimeout(openT); clearTimeout(closeT);
-      if (openCard && openCard !== card) openCard.classList.remove('previewing');
-      openCard = card;
-      card.classList.remove('tilting');
-      card.style.transform = '';
-      card.classList.add('previewing');
-      pop.style.setProperty('--brand-rgb', card.style.getPropertyValue('--brand-rgb') || '227,189,99');
-      pop.innerHTML = build(c);
-      fillBadge(pop.querySelector('.cl-avatar'), c);
-      /* anchor over the card: just a touch wider than the card itself */
-      const r = card.getBoundingClientRect();
-      const w = Math.max(280, Math.min(innerWidth - 24, Math.round(r.width * 1.06)));
-      pop.style.width = w + 'px';
-      const h = pop.offsetHeight;
-      const left = Math.max(12, Math.min(innerWidth - w - 12, r.left + r.width / 2 - w / 2));
-      const top = Math.max(72, Math.min(innerHeight - h - 12, r.top + r.height / 2 - h / 2));
-      pop.style.left = left + 'px';
-      pop.style.top = top + 'px';
-      /* a frame later the measured, still-hidden panel is ready to animate in */
-      requestAnimationFrame(() => requestAnimationFrame(() => pop.classList.add('open')));
-    };
-    const showSoon = (card) => {
-      clearTimeout(closeT);
-      if (openCard === card && pop && pop.classList.contains('open')) return;
-      clearTimeout(openT);
-      openT = setTimeout(() => show(card), 150);
-    };
-    for (const card of grid.querySelectorAll('.cl-link')) {
-      card.addEventListener('pointerenter', () => showSoon(card));
-      card.addEventListener('pointerleave', () => { closeT = setTimeout(hide, 140); });
-      card.addEventListener('focus', () => show(card));
-      card.addEventListener('blur', hide);
-    }
-    addEventListener('keydown', (ev) => { if (ev.key === 'Escape') hide(); });
-    addEventListener('scroll', hide, { passive: true });
-    addEventListener('resize', hide);
-  }
 
   const nums = stats ? [...stats.querySelectorAll('b[data-to]')] : [];
   if (!nums.length || !motion || !window.IntersectionObserver) return;

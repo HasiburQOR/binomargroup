@@ -3,11 +3,13 @@
    Shape mirrors the Sanity schema in sanity/schema.js —
    fields added here should be added there too.
 
-   logo: the company's own mark, shown on its card, its map tag, the
-   finder, the phone chips, the tooltip and its company page. Put the
-   file in assets/logos/ (SVG, PNG or WebP, drawn for a white background)
-   and set its path, e.g. "assets/logos/traveldoor.svg". Left "", the
-   badge shows the initial on the brand colour (see assets/logos/README.md).
+   logo: the company's whole logo (wordmark and all), shown on its card
+   and its company page. logoMark: a square icon cut from it for the small
+   round badges — the map tag, the card avatar, the finder, the phone
+   chips, the tooltip (empty = the logo). logoBg: the tile colour behind
+   both (empty = light; a white logo needs a dark one). Files live in
+   assets/logos/. With no logo at all, the badge shows the initial on the
+   brand colour (see assets/logos/README.md).
    ============================================================ */
 
 window.LOCAL_COMPANIES = [
@@ -23,7 +25,9 @@ window.LOCAL_COMPANIES = [
       "With certified consultants, round-the-clock on-trip support and long-standing airline and hotel partnerships, Traveldoor turns complicated itineraries into effortless travel."
     ],
     color: "#0ea5e9",
-    logo: "",                    // e.g. "assets/logos/traveldoor.svg"
+    logo: "assets/logos/traveldoor.webp",
+    logoMark: "assets/logos/traveldoor-mark.webp",
+    logoBg: "#0f2340",           // the Travel Door logo is white: it sits on a deep navy tile
     floors: 9,
     plot: 1,
     featured: true,
@@ -46,7 +50,8 @@ window.LOCAL_COMPANIES = [
       "From cultural city breaks to incentive trips and special-interest tours, MAQ Tourism blends careful planning with room for spontaneity — the way travel should feel."
     ],
     color: "#14b8a6",
-    logo: "",                    // e.g. "assets/logos/maq-tourism.svg"
+    logo: "assets/logos/maq-tourism.webp",
+    logoMark: "assets/logos/maq-tourism-mark.webp",
     floors: 4,
     plot: 2,
     featured: true,
@@ -68,7 +73,8 @@ window.LOCAL_COMPANIES = [
       "Local teams, transparent operations and years of on-the-ground relationships mean every group lands in expert hands — from border to toast."
     ],
     color: "#e11d48",
-    logo: "",                    // e.g. "assets/logos/hashtag-georgia.svg"
+    logo: "assets/logos/hashtag-georgia.webp",
+    logoMark: "assets/logos/hashtag-georgia-mark.webp",
     floors: 6,
     plot: 3,
     featured: true,
@@ -89,7 +95,9 @@ window.LOCAL_COMPANIES = [
       "One desk for documents, bookings and departure-ready support — so travellers set off with confidence and everything in order."
     ],
     color: "#f97316",
-    logo: "",                    // e.g. "assets/logos/traveldoor-outbound.svg"
+    logo: "assets/logos/traveldoor.webp",         // the same Travel Door logo as the flagship
+    logoMark: "assets/logos/traveldoor-mark.webp",
+    logoBg: "#0f2340",
     floors: 5,
     plot: 4,
     featured: false,

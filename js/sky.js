@@ -114,182 +114,123 @@ function makeSunGlow() {
 }
 
 /* ---------------------------------------------------------------
-   2. the Milky Way — an equirectangular canvas painted with a real
-   great-circle band, so the arc wraps the whole sky and stays
-   convincing from every camera angle.
+   2. the Milky Way — drawn by a shader straight from the view
+   direction: a great-circle band with a mottled glow, a dark dust
+   lane, a warm bulge at the galactic core and star clouds packed
+   into it. (It used to be a painted equirectangular canvas; where
+   that map pinched together at the dome's pole — right overhead
+   once the sky pass tilts the camera up — it smeared into a grey
+   cone of streaks. Computed per pixel there is no pole to pinch.)
+   The band sits exactly where the canvas put it, so MW_SPIN still
+   brings the core over the default view.
    --------------------------------------------------------------- */
-function milkyWayTexture(width) {
-  const W = width || 4096, H = (width || 4096) / 2;
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const g = c.getContext('2d');
-  g.fillStyle = '#000000';
-  g.fillRect(0, 0, W, H);
+const MW_INC = 1.04;                   // band tilt off the dome's equator
+const MW_LAM0 = 0.55;                  // where it crosses the equator
+const MW_CORE = MW_LAM0 + 2.15;        // galactic centre longitude
 
-  const rand = mulberry32(20260920);
-  const INC = 1.04;                    // band tilt off the equator
-  const LAM0 = 0.55;                   // where it crosses the equator
-  const LAM_CORE = LAM0 + 2.15;        // galactic centre longitude
-
-  /* latitude of the band centre at a given longitude (a great circle) */
-  const bandLat = (lam) => Math.asin(Math.sin(INC) * Math.sin(lam - LAM0));
-  const yOf = (lat) => (0.5 - lat / Math.PI) * H;
-  const xOf = (lam) => ((lam % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) / (Math.PI * 2) * W;
-
-  /* angular distance from the core, for brightness/width shaping */
-  const coreDist = (lam) => {
-    let d = (lam - LAM_CORE) % (Math.PI * 2);
-    if (d > Math.PI) d -= Math.PI * 2;
-    if (d < -Math.PI) d += Math.PI * 2;
-    return Math.abs(d);
-  };
-  /* how bright the band is here: bulging bright at the core, thin far out */
-  const density = (lam) => {
-    const d = coreDist(lam);
-    return 0.22 + 0.78 * Math.exp(-(d * d) / (2 * 1.15 * 1.15));
-  };
-  /* latitude half-width, corrected so the band keeps an even angular
-     thickness where the great circle climbs steeply through the map */
-  const halfWidth = (lam) => {
-    const lat = bandLat(lam);
-    const slope = (bandLat(lam + 0.01) - bandLat(lam - 0.01)) / 0.02 / Math.max(0.2, Math.cos(lat));
-    const stretch = Math.sqrt(1 + slope * slope);
-    return (0.135 + 0.16 * density(lam)) * stretch;
-  };
-  /* the dark dust lane wanders a little off the exact centre */
-  const laneOffset = (lam) => Math.sin(lam * 2.3 + 1.1) * 0.028 + Math.sin(lam * 5.1) * 0.012;
-
-  const gauss = () => {
-    let u = 0, v = 0;
-    while (u === 0) u = rand();
-    while (v === 0) v = rand();
-    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-  };
-
-  /* ---- a. broad glow along the band -------------------------------- */
-  for (let i = 0; i < 520; i++) {
-    const lam = rand() * Math.PI * 2;
-    const dens = density(lam);
-    if (rand() > 0.25 + dens * 0.85) continue;
-    const hw = halfWidth(lam);
-    const off = gauss() * hw * 0.5 + laneOffset(lam);
-    const lat = bandLat(lam) + off;
-    if (Math.abs(lat) > 1.5) continue;
-    const x = xOf(lam), y = yOf(lat);
-    const r = (40 + rand() * 150) * (0.6 + dens);
-    const warm = rand() < 0.34;
-    const col = warm ? '255,226,186' : (rand() < 0.5 ? '150,176,255' : '188,166,255');
-    const a = (0.020 + rand() * 0.040) * dens;
-    const grad = g.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, 'rgba(' + col + ',' + a.toFixed(4) + ')');
-    grad.addColorStop(0.55, 'rgba(' + col + ',' + (a * 0.38).toFixed(4) + ')');
-    grad.addColorStop(1, 'rgba(' + col + ',0)');
-    g.fillStyle = grad;
-    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
-    if (x < r) { g.save(); g.translate(W, 0); g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); g.restore(); }
-    if (x > W - r) { g.save(); g.translate(-W, 0); g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); g.restore(); }
-  }
-
-  /* ---- b. the bright galactic core --------------------------------- */
-  {
-    const x = xOf(LAM_CORE), y = yOf(bandLat(LAM_CORE));
-    const lat = bandLat(LAM_CORE);
-    const slope = (bandLat(LAM_CORE + 0.01) - bandLat(LAM_CORE - 0.01)) / 0.02 / Math.max(0.2, Math.cos(lat));
-    g.save();
-    g.translate(x, y);
-    g.rotate(Math.atan(-slope * (H / Math.PI) / (W / (Math.PI * 2))));
-    g.scale(2.35, 1);
-    const grad = g.createRadialGradient(0, 0, 0, 0, 0, 260);
-    grad.addColorStop(0, 'rgba(255,242,218,0.30)');
-    grad.addColorStop(0.32, 'rgba(240,218,196,0.15)');
-    grad.addColorStop(0.68, 'rgba(182,184,238,0.06)');
-    grad.addColorStop(1, 'rgba(160,170,230,0)');
-    g.fillStyle = grad;
-    g.beginPath(); g.arc(0, 0, 260, 0, Math.PI * 2); g.fill();
-    g.restore();
-  }
-
-  /* ---- c. star clouds packed into the band ------------------------- */
-  const BAND_STARS = Math.round(13000 * (W / 4096));
-  for (let i = 0; i < BAND_STARS; i++) {
-    const lam = rand() * Math.PI * 2;
-    const dens = density(lam);
-    if (rand() > dens) continue;
-    const hw = halfWidth(lam);
-    /* pow() pulls stars toward the spine so the band has a soft core */
-    const off = gauss() * hw * 0.42;
-    const lane = laneOffset(lam);
-    /* the dust lane eats stars near the spine */
-    const fromLane = Math.abs(off - lane);
-    if (fromLane < hw * 0.16 && rand() < 0.82) continue;
-    const lat = bandLat(lam) + off;
-    if (Math.abs(lat) > 1.52) continue;
-    const x = xOf(lam), y = yOf(lat);
-    const roll = rand();
-    const s = roll < 0.012 ? 2.4 : roll < 0.08 ? 1.7 : roll < 0.34 ? 1.2 : 1.0;
-    const warm = rand() < 0.3;
-    const col = warm ? '255,238,208' : (rand() < 0.75 ? '212,226,255' : '186,200,255');
-    g.fillStyle = 'rgba(' + col + ',' + (0.16 + rand() * 0.54).toFixed(2) + ')';
-    g.fillRect(x, y, s, s);
-  }
-
-  /* ---- d. sparse field stars over the rest of the sky --------------- */
-  for (let i = 0; i < Math.round(2600 * (W / 4096)); i++) {
-    const lam = rand() * Math.PI * 2;
-    const lat = Math.asin(rand() * 2 - 1);            // even over the sphere
-    const x = xOf(lam), y = yOf(lat);
-    const s = rand() < 0.05 ? 1.6 : rand() < 0.3 ? 1.0 : 0.65;
-    g.fillStyle = 'rgba(' + (rand() < 0.22 ? '255,236,206' : '206,222,255') + ',' +
-      (0.10 + rand() * 0.55).toFixed(2) + ')';
-    g.fillRect(x, y, s, s);
-  }
-
-  /* ---- e. a handful of named-bright stars with diffraction spikes --- */
-  for (let i = 0; i < 14; i++) {
-    const lam = rand() * Math.PI * 2;
-    const inBand = rand() < 0.55;
-    const lat = inBand ? bandLat(lam) + gauss() * halfWidth(lam) * 0.5 : Math.asin(rand() * 2 - 1) * 0.8;
-    if (Math.abs(lat) > 1.45) continue;
-    const x = xOf(lam), y = yOf(lat);
-    const warm = rand() < 0.3;
-    const rgb = warm ? '255,232,196' : '206,226,255';
-    const r = 7 + rand() * 8;
-    const grad = g.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, 'rgba(255,255,255,0.95)');
-    grad.addColorStop(0.22, 'rgba(' + rgb + ',0.45)');
-    grad.addColorStop(1, 'rgba(' + rgb + ',0)');
-    g.fillStyle = grad;
-    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
-    /* spikes */
-    const sp = g.createLinearGradient(x - r * 2.6, y, x + r * 2.6, y);
-    sp.addColorStop(0, 'rgba(' + rgb + ',0)');
-    sp.addColorStop(0.5, 'rgba(255,255,255,0.30)');
-    sp.addColorStop(1, 'rgba(' + rgb + ',0)');
-    g.fillStyle = sp;
-    g.fillRect(x - r * 2.2, y - 0.55, r * 4.4, 1.1);
-    const sp2 = g.createLinearGradient(x, y - r * 1.8, x, y + r * 1.8);
-    sp2.addColorStop(0, 'rgba(' + rgb + ',0)');
-    sp2.addColorStop(0.5, 'rgba(255,255,255,0.26)');
-    sp2.addColorStop(1, 'rgba(' + rgb + ',0)');
-    g.fillStyle = sp2;
-    g.fillRect(x - 0.55, y - r * 1.5, 1.1, r * 3.0);
-  }
-
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 16;
-  return tex;
+/* a direction on the dome from the map's longitude / latitude, matching
+   SphereGeometry's own layout */
+function domeDir(lam, lat) {
+  return new THREE.Vector3(-Math.cos(lam) * Math.cos(lat), Math.sin(lat), Math.sin(lam) * Math.cos(lat));
 }
 
-function makeMilkyWayDome(width) {
-  const mesh = new THREE.Mesh(
-    new THREE.SphereGeometry(R_MW, 48, 32),
-    new THREE.MeshBasicMaterial({
-      map: milkyWayTexture(width), side: THREE.BackSide, fog: false,
-      transparent: true, opacity: 0, depthWrite: false,
-      blending: THREE.AdditiveBlending
-    })
-  );
+function makeMilkyWayDome() {
+  /* the band's great circle: b1 where it crosses the equator, b2 at its
+     highest point, n the pole of its plane */
+  const b1 = domeDir(MW_LAM0, 0);
+  const b2 = domeDir(MW_LAM0 + Math.PI / 2, MW_INC);
+  const n = new THREE.Vector3().crossVectors(b1, b2).normalize();
+  const coreLat = Math.asin(Math.sin(MW_INC) * Math.sin(MW_CORE - MW_LAM0));
+  const core = domeDir(MW_CORE, coreLat);
+  const sCore = Math.atan2(core.dot(b2), core.dot(b1));
+
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uOpacity: { value: 0 },
+      uB1: { value: b1 }, uB2: { value: b2 }, uN: { value: n },
+      uCore: { value: sCore }
+    },
+    vertexShader: `
+      varying vec3 vDir;
+      void main() {
+        vDir = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      uniform float uOpacity;
+      uniform vec3 uB1, uB2, uN;
+      uniform float uCore;
+      varying vec3 vDir;
+
+      float hash3(vec3 p) {
+        p = fract(p * 0.3183099 + vec3(0.71, 0.113, 0.419));
+        p *= 17.0;
+        return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+      }
+      float vnoise(vec3 p) {
+        vec3 i = floor(p), f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(mix(hash3(i), hash3(i + vec3(1,0,0)), f.x),
+                       mix(hash3(i + vec3(0,1,0)), hash3(i + vec3(1,1,0)), f.x), f.y),
+                   mix(mix(hash3(i + vec3(0,0,1)), hash3(i + vec3(1,0,1)), f.x),
+                       mix(hash3(i + vec3(0,1,1)), hash3(i + vec3(1,1,1)), f.x), f.y), f.z);
+      }
+      float fbm(vec3 p) {
+        float a = 0.5, s = 0.0;
+        for (int i = 0; i < 4; i++) { s += a * vnoise(p); p = p * 2.03 + 11.7; a *= 0.5; }
+        return s;
+      }
+      /* one star per grid cell (some cells empty), kept off the cell walls
+         so no neighbour ever needs checking */
+      float starLayer(vec3 d, float k, float keep, float rad) {
+        vec3 c = floor(d * k);
+        float h = hash3(c);
+        if (h > keep) return 0.0;
+        vec3 o = vec3(hash3(c + 17.3), hash3(c + 41.9), hash3(c + 73.1)) * 0.6 + 0.2;
+        float dist = length(d * k - (c + o)) / k;
+        float b = 0.35 + 0.65 * fract(h * 57.0);
+        return b * exp(-dist * dist / (rad * rad));
+      }
+
+      void main() {
+        vec3 d = normalize(vDir);
+        float x = asin(clamp(dot(d, uN), -1.0, 1.0));           // off the band's spine
+        float s = atan(dot(d, uB2), dot(d, uB1));               // along it
+        float dc = abs(mod(s - uCore + 3.14159265, 6.2831853) - 3.14159265);
+        float dens = 0.22 + 0.78 * exp(-dc * dc / (2.0 * 1.15 * 1.15));
+        float hw = 0.135 + 0.16 * dens;                         // half width, radians
+        float lane = sin(s * 2.3 + 1.1) * 0.028 + sin(s * 5.1) * 0.012;
+
+        /* the broad glow, mottled into star clouds */
+        float sig = hw * 0.55;
+        float band = exp(-x * x / (2.0 * sig * sig));
+        float m = fbm(d * 4.2);
+        float m2 = fbm(d * 11.0 + 5.0);
+        float glow = band * dens * (0.12 + 1.9 * pow(m, 2.6)) * (0.7 + 0.6 * m2);
+        /* the dark rift along the spine, ragged at the edges */
+        float rift = exp(-pow(x - lane, 2.0) / (2.0 * pow(hw * 0.13, 2.0)));
+        glow *= 1.0 - 0.78 * rift * smoothstep(0.25, 0.65, fbm(d * 9.0 + 2.0));
+
+        /* the warm bulge round the core */
+        float bulge = exp(-dc * dc / (2.0 * 0.42 * 0.42) - x * x / (2.0 * 0.11 * 0.11));
+
+        vec3 cool = mix(vec3(0.46, 0.55, 1.0), vec3(0.62, 0.52, 1.0), m2);
+        vec3 col = cool * glow * 0.072 + vec3(1.0, 0.86, 0.7) * (bulge * 0.035 + glow * bulge * 0.05);
+
+        /* stars, crowded into the band and thin outside it */
+        float crowd = clamp(band * dens * (0.4 + m), 0.0, 1.0);
+        float st = starLayer(d, 220.0, 0.015 + 0.3 * crowd, 0.0010)
+                 + 0.6 * starLayer(d, 480.0, 0.25 * crowd * crowd, 0.0006);
+        col += vec3(0.86, 0.9, 1.0) * st * 0.5;
+
+        gl_FragColor = vec4(col, uOpacity);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+    side: THREE.BackSide, transparent: true, depthWrite: false, fog: false,
+    blending: THREE.AdditiveBlending
+  });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(R_MW, 48, 32), mat);
   mesh.renderOrder = -29;
   /* a pivot lets us tilt the whole galactic plane while the dome
      itself keeps spinning on its own axis */
@@ -581,7 +522,7 @@ export function createNightSky(scene, q = {}) {
   root.add(daySky, sun.group);
 
   const gradient = makeSkyGradient();
-  const milky = makeMilkyWayDome(q.milkyWayWidth);
+  const milky = makeMilkyWayDome();
   const stars = makeStarPoints(q.stars);
   root.add(gradient, milky.pivot, stars);
 
@@ -641,7 +582,7 @@ export function createNightSky(scene, q = {}) {
       }
 
       gradient.material.opacity = mix;
-      milky.mesh.material.opacity = 0.62 * mix;
+      milky.mesh.material.uniforms.uOpacity.value = 0.62 * mix;
       stars.material.uniforms.uTime.value = t;
       stars.material.uniforms.uOpacity.value = 0.9 * mix;
 

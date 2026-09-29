@@ -10,13 +10,17 @@ const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
 }[c]));
 
+/* the page header shows the whole logo on its own tile (wide enough for a
+   wordmark); a logo that fails to load falls back to the initial, never a
+   broken image */
 function avatarHtml(c) {
-  /* a logo that fails to load falls back to the initial, never a broken image */
+  const initial = esc(c.name.charAt(0).toUpperCase());
   if (c.logo) {
-    return `<img src="${esc(c.logo)}" alt="${esc(c.name)} logo" ` +
-      `onerror="this.replaceWith(document.createTextNode('${esc(c.name.charAt(0).toUpperCase())}'))">`;
+    const bg = c.logoBg ? ` style="--logo-bg:${esc(c.logoBg)}"` : '';
+    return `<div class="hero-avatar has-logo wide"${bg}><img src="${esc(c.logo)}" alt="${esc(c.name)} logo" ` +
+      `onerror="this.parentNode.classList.remove('has-logo','wide');this.replaceWith(document.createTextNode('${initial}'))"></div>`;
   }
-  return esc(c.name.charAt(0).toUpperCase());
+  return `<div class="hero-avatar">${initial}</div>`;
 }
 
 function contactRow(icon, label, value, href) {
@@ -50,7 +54,7 @@ function companyHtml(c, all) {
   return `
   <section class="hero" style="background:linear-gradient(135deg, ${esc(c.color)}dd, #0b1220 78%)">
     <div class="hero-top">
-      <div class="hero-avatar">${avatarHtml(c)}</div>
+      ${avatarHtml(c)}
       <div>
         <span class="badge">🏛️ ${esc(meta.label)} · Binomar Group</span>
         <h1 class="hero-title">${esc(c.name)}</h1>

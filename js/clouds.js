@@ -213,6 +213,24 @@ function cirrusTexture() {
   return tex;
 }
 
+/* the cap's own fade: nothing at the pole (where the streaks would all
+   converge into a whirlpool once the sky pass looks straight up), full
+   strength through the middle of the sky, and soft again at the rim */
+function cirrusFade() {
+  const c = document.createElement('canvas');
+  c.width = 1; c.height = 128;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 0, 128);   // top row = the pole
+  grad.addColorStop(0.00, '#000');
+  grad.addColorStop(0.30, '#000');
+  grad.addColorStop(0.62, '#fff');
+  grad.addColorStop(0.86, '#fff');
+  grad.addColorStop(1.00, '#000');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 1, 128);
+  return new THREE.CanvasTexture(c);
+}
+
 function makeCirrus(radius, repeat, opacity) {
   const tex = cirrusTexture();
   tex.repeat.set(repeat, 1);
@@ -221,7 +239,7 @@ function makeCirrus(radius, repeat, opacity) {
   const mesh = new THREE.Mesh(
     new THREE.SphereGeometry(radius, 40, 20, 0, Math.PI * 2, 0, Math.PI * 0.46),
     new THREE.MeshBasicMaterial({
-      map: tex, transparent: true, opacity, fog: false,
+      map: tex, alphaMap: cirrusFade(), transparent: true, opacity, fog: false,
       depthWrite: false, side: THREE.BackSide
     })
   );

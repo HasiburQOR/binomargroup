@@ -25,6 +25,7 @@
     <a href="#hero" class="on">District</a>
     <a href="#companies">Companies</a>
     <a href="#about">About</a>
+    <a href="#contact">Contact</a>
   </div>
   <div class="nav-spacer"></div>
   <div class="hud-actions">
@@ -148,7 +149,7 @@ if (location.protocol === 'file:') {
   <section class="band alt" id="companies">
     <div class="band-inner">
       <h2 class="sec-title">Companies of the district</h2>
-      <p class="sec-sub">Rest on a card to preview its full story — click to open the profile.</p>
+      <p class="sec-sub">Hover a card for its story — click to open the full profile.</p>
       <div class="cards" id="companyGrid"></div>
     </div>
   </section>
@@ -164,13 +165,102 @@ if (location.protocol === 'file:') {
       <div class="cta-row"><a class="btn" href="#hero">🗺️ Back to the 3D map</a></div>
     </div>
   </section>
+
+  <!-- contact: a postcard from the summit. The message side composes an
+       email in the visitor's own mail app (no server, nothing stored); the
+       address side carries the real email, phone and head-office address
+       (which opens in Google Maps), each with a copy button. Motion and
+       copy behaviour live in js/contact.js. -->
+  <section class="band contact" id="contact">
+    <div class="band-inner">
+      <h2 class="sec-title">Send us a postcard</h2>
+      <p class="sec-sub">A trip to plan, a partnership to propose, or just a question for the group — write to the summit. Every postcard gets an answer.</p>
+
+      <div class="postcard" id="postcard">
+        <div class="pc-paper">
+          <form class="pc-message" id="postcardForm" novalidate>
+            <p class="pc-greet">Greetings from the summit,</p>
+            <label class="pc-field">
+              <span>Your name</span>
+              <input name="name" type="text" autocomplete="name" required maxlength="80" />
+            </label>
+            <label class="pc-field">
+              <span>Where should we write back?</span>
+              <input name="reply" type="text" autocomplete="email" maxlength="120" placeholder="email or phone" />
+            </label>
+            <label class="pc-field pc-field-msg">
+              <span>Your message</span>
+              <textarea name="message" rows="4" required maxlength="2000" placeholder="Tell us where you would like to go…"></textarea>
+            </label>
+            <div class="pc-send-row">
+              <button class="btn pc-send" type="submit">Send the postcard <span aria-hidden="true">✉</span></button>
+              <small class="pc-note" id="postcardNote" aria-live="polite">Opens your email app with the postcard written out.</small>
+            </div>
+          </form>
+
+          <div class="pc-rule" aria-hidden="true"></div>
+
+          <div class="pc-address">
+            <div class="pc-corner" aria-hidden="true">
+              <svg class="pc-postmark" viewBox="0 0 200 120">
+                <defs><path id="pmRing" d="M60,60 m-41,0 a41,41 0 1,1 82,0 a41,41 0 1,1 -82,0" /></defs>
+                <circle cx="60" cy="60" r="50" />
+                <circle cx="60" cy="60" r="31" />
+                <text class="pm-ring"><textPath href="#pmRing" startOffset="0">BINOMAR GROUP · DHAKA 1206 ·</textPath></text>
+                <text class="pm-big" x="60" y="58">AIR</text>
+                <text class="pm-big" x="60" y="74">MAIL</text>
+                <path class="pm-wave" d="M112 44 q10 -7 20 0 t20 0 t20 0 t20 0" />
+                <path class="pm-wave" d="M112 60 q10 -7 20 0 t20 0 t20 0 t20 0" />
+                <path class="pm-wave" d="M112 76 q10 -7 20 0 t20 0 t20 0 t20 0" />
+              </svg>
+              <div class="pc-stamp">
+                <img src="assets/brand/logo-128.webp" alt="" width="64" height="64" />
+                <span>Binomar</span>
+              </div>
+            </div>
+
+            <p class="pc-to">To&nbsp;&nbsp;<b>Binomar Group</b></p>
+            <ul class="pc-lines">
+              <li>
+                <a class="pc-line" href="mailto:binomargroup0@gmail.com">
+                  <i aria-hidden="true">✉</i>
+                  <span><small>Email</small>binomargroup0<wbr>@gmail.com</span>
+                </a>
+                <button class="pc-copy" type="button" data-copy="binomargroup0@gmail.com" aria-label="Copy the email address">Copy</button>
+              </li>
+              <li>
+                <a class="pc-line" href="tel:+8801351452265">
+                  <i aria-hidden="true">☎</i>
+                  <span><small>Phone</small>+880&nbsp;1351&#8209;452265</span>
+                </a>
+                <button class="pc-copy" type="button" data-copy="+8801351452265" aria-label="Copy the phone number">Copy</button>
+              </li>
+              <li>
+                <a class="pc-line pc-line-addr" href="https://www.google.com/maps/search/?api=1&amp;query=House%20195%2FA%2C%20Road%201%2C%20Mohakhali%20DOHS%2C%20Dhaka%201206%2C%20Bangladesh"
+                   target="_blank" rel="noopener">
+                  <i aria-hidden="true">⌖</i>
+                  <span><small>Head office</small>House 195/A, Road 1<br />Mohakhali DOHS, Dhaka 1206</span>
+                </a>
+                <button class="pc-copy" type="button" data-copy="House 195/A, Road 1, Mohakhali DOHS, Dhaka 1206, Bangladesh" aria-label="Copy the address">Copy</button>
+              </li>
+            </ul>
+            <p class="pc-sign">— the whole district, waiting to hear from you</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 </main>
 </div>
 
 <footer class="site-footer">
   <nav>
-    <a href="#hero">District</a> · <a href="#companies">Companies</a> · <a href="#about">About</a>
+    <a href="#hero">District</a> · <a href="#companies">Companies</a> · <a href="#about">About</a> · <a href="#contact">Contact</a>
   </nav>
+  <div class="foot-contact">
+    <a href="mailto:binomargroup0@gmail.com">binomargroup0@gmail.com</a> · <a href="tel:+8801351452265">+880 1351-452265</a>
+    · House 195/A, Road 1, Mohakhali DOHS, Dhaka 1206
+  </div>
   <div>© 2026 Binomar Group · Company District — interactive 3D map</div>
   <div>3D models by Quaternius, Poly by Google, Kay Lousberg and other Poly Pizza artists (CC0 / CC-BY) · <a href="assets/models/CREDITS.md">full credits</a></div>
 </footer>
@@ -232,5 +322,6 @@ if (location.protocol === 'file:') {
 <link rel="modulepreload" href="js/city-build.js" />
 <link rel="modulepreload" href="js/buildings.js" />
 <script type="module" src="js/city.js"></script>
+<script type="module" src="js/contact.js"></script>
 </body>
 </html>

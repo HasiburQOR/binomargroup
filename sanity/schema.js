@@ -99,6 +99,17 @@ export default {
       options: { hotspot: true }
     },
     {
+      name: 'logoMark',
+      title: 'Logo mark — square icon for the small badges (empty = the logo)',
+      type: 'image'
+    },
+    {
+      name: 'logoBg',
+      title: 'Logo tile colour, hex (empty = light tile; set a dark one for a white logo)',
+      type: 'string',
+      validation: (Rule) => Rule.regex(/^#[0-9a-fA-F]{6}$/, { name: 'hex colour' })
+    },
+    {
       name: 'gallery',
       title: 'Gallery images',
       type: 'array',
@@ -110,6 +121,7 @@ export default {
     { name: 'whatsapp', title: 'WhatsApp number (digits with country code)', type: 'string' },
     { name: 'email',   title: 'Email',       type: 'string' },
     { name: 'address', title: 'Head office address', type: 'text', rows: 2 },
+    { name: 'founded', title: 'Founded (year)', type: 'string' },
     {
       name: 'plot',
       title: 'Sort order / plot number (lower = first in list)',

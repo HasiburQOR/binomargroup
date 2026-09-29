@@ -205,11 +205,15 @@ body.page-company{background:radial-gradient(1200px 600px at 80% -10%,var(--nigh
 .hero-avatar{width:88px;height:88px;border-radius:20px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);
   display:flex;align-items:center;justify-content:center;font-weight:800;font-size:36px;flex:none;overflow:hidden}
 .hero-avatar img{width:100%;height:100%;object-fit:contain;background:#fff;padding:12%;box-sizing:border-box}
+/* the company page's logo: the whole mark, wordmark and all, on its tile */
+.hero-avatar.wide{width:auto;min-width:88px;max-width:min(300px,70vw);padding:0 20px;box-sizing:border-box}
+.hero-avatar.wide img{width:auto;height:64%;max-width:100%;padding:0;background:none}
 
 /* ---------- company logos in badges (fillBadge in data.js) ----------
-   A real logo sits whole on a light tile — most marks are drawn for white —
+   A real logo sits whole on its tile — light by default, since most marks
+   are drawn for white; a company with a white logo sets its own (logoBg) —
    in every badge size; without one, the initial on the brand colour. */
-.has-logo{background:#f7f8fb!important;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(10,20,40,.08)}
+.has-logo{background:var(--logo-bg,#f7f8fb)!important;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(10,20,40,.08)}
 .has-logo img{width:100%;height:100%;display:block;object-fit:contain;padding:14%;box-sizing:border-box}
 /* the group's own gold monogram is drawn for the dark: no tile */
 .has-logo.group-mark{background:none!important;box-shadow:none}
@@ -341,14 +345,14 @@ section[id]{scroll-margin-top:78px}
    the hero, while the camera tilts up off the district into the night sky.
    The page's half is transform and opacity only:
      0.00–0.30  the headline, name tags and controls float away
-     0.42–1.00  <main> rises from the bottom like a sheet and slides over
-                the pinned sky (plain scrolling: it lives in the same runway,
-                after a spacer sized in city.js), and the sky dims beneath it
-   After that the sky stays pinned behind the whole page: the sections are
-   translucent, so the stars, the Milky Way and the drifting clouds show
-   through while you read (city.js draws them at a third of the frame rate
-   there). No backdrop blur — blurring a live canvas every frame is what
-   makes phones stutter; the veil and the page's own tint do the softening. */
+     0.42–1.00  <main> rises from the bottom (plain scrolling: it lives in
+                the same runway, after a spacer sized in city.js) and the 3D
+                view folds up ahead of it like an accordion — four panels,
+                creasing towards the navbar, the bottom crease riding the
+                page's leading edge (js/fold.js, drawn in WebGL, so the CSS
+                has nothing to do but dim it with the veil)
+   Once the page meets the navbar the district is folded away completely and
+   stops drawing until you scroll back up, which unfolds it again. */
 .hero-drift{display:flex;flex-direction:column;align-items:center;
   transform:translate3d(0,calc(var(--sp,0) * -30vh),0);opacity:calc(1 - var(--sp,0) * 3.4)}
 .map-labels{opacity:calc(1 - clamp(0,(var(--sp,0) - .06) * 4,1));transition:opacity .7s ease,visibility .7s}
@@ -359,8 +363,7 @@ header.hero .hud,.company-chips,.scroll-cue:not(.gone){opacity:calc(1 - clamp(0,
 .hero-veil{position:absolute;inset:0;z-index:13;pointer-events:none;background:#02040c;
   opacity:clamp(0,(var(--sp,0) - .4) * 1.1,.5)}
 /* the sheet: the page itself, with a rounded leading edge and a soft shadow
-   cast up onto the sky it is sliding over — tinted, not opaque, so the
-   world stays faintly there behind the words */
+   cast up onto the fold closing above it */
 .hero-run > main{position:relative;z-index:2;overflow:hidden;
   background:linear-gradient(180deg,rgba(7,16,34,.9) 0,rgba(7,16,34,.66) 260px,rgba(7,16,34,.72));
   border-radius:28px 28px 0 0;box-shadow:0 -24px 70px rgba(0,0,0,.55),0 -1px 0 rgba(var(--haze-rgb),.22)}
@@ -445,133 +448,234 @@ main .band .reveal{transition:opacity .7s cubic-bezier(.2,.7,.2,1) calc(var(--i,
 .stat b{display:block;font-size:34px;font-weight:800;font-variant-numeric:tabular-nums;background:linear-gradient(135deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent}
 .stat span{color:var(--muted);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase}
 .sec-text{color:#c9d6e8;max-width:780px;line-height:1.85;font-size:14.5px}
-.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:36px}
-/* two by two across the section, one column on narrow screens; each row
-   shares a height, so a longer excerpt stretches its neighbour to match */
-@media (max-width:700px){.cards{grid-template-columns:1fr}}
-/* ---- the card face: dark glass with a wash of its own brand colour ---- */
-.cl-link{display:flex;gap:16px;align-items:center;color:var(--text);transition:.22s;
-  background:radial-gradient(430px 210px at 88% -12%, rgba(var(--brand-rgb,227,189,99),.14), transparent 62%),
-    linear-gradient(165deg, rgba(255,255,255,.05), rgba(255,255,255,.015) 42%, rgba(9,15,31,.42)),
-    var(--panel);
-  border:1px solid var(--line);border-radius:20px;padding:20px 22px;
-  position:relative;isolation:isolate;overflow:hidden;backdrop-filter:blur(9px);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 10px 26px rgba(2,6,18,.28)}
-.cl-link:hover{transform:translateY(-4px);border-color:rgba(var(--brand-rgb,227,189,99),.7);
-  box-shadow:0 18px 46px rgba(2,6,18,.55), 0 0 46px rgba(var(--brand-rgb,227,189,99),.2), inset 0 1px 0 rgba(255,255,255,.08)}
-/* a gradient ring sits over the plain border and lights up in the brand
-   colour on hover (the ::before/::after pseudos are spoken for) */
-.cl-ring{position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;opacity:0;transition:opacity .3s;
-  background:linear-gradient(135deg, rgba(var(--brand-rgb,227,189,99),.75), rgba(var(--brand-rgb,227,189,99),.12) 34%, transparent 58%, rgba(var(--brand-rgb,227,189,99),.45));
-  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite:xor;mask-composite:exclude}
-.cl-link:hover .cl-ring{opacity:1}
-/* a ghost numeral — 01, 02 … — watermarking the corner */
-.cl-num{position:absolute;top:6px;right:14px;font-family:var(--font-display);font-size:46px;font-weight:800;line-height:1.15;
-  color:transparent;-webkit-text-stroke:1px rgba(255,255,255,.13);pointer-events:none;transition:-webkit-text-stroke-color .3s}
-.cl-link:hover .cl-num{-webkit-text-stroke-color:rgba(var(--brand-rgb,227,189,99),.5)}
-/* a spotlight in the company's own colour, following the cursor (city.js
-   writes --mx/--my); it sits under the content, over the card face */
-.cl-link::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;pointer-events:none;opacity:0;
-  background:radial-gradient(280px circle at var(--mx,50%) var(--my,0%),rgba(var(--brand-rgb,227,189,99),.24),transparent 70%);
-  transition:opacity .35s}
-.cl-link:hover::before{opacity:1}
-/* while the card leans toward the cursor, it follows quickly — not with the
-   slow, staggered transition it rose in with (id scope so it outranks the
-   grid's entrance transition above; the filter leg keeps the dim quick) */
-#companyGrid .cl-link.tilting,#companyGrid .cl-link.previewing{transition:transform .14s ease-out,border-color .22s,box-shadow .22s,filter .35s ease}
-.cl-avatar{width:54px;height:54px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;color:#fff;flex:none;
-  box-shadow:0 8px 22px rgba(var(--brand-rgb,227,189,99),.35), inset 0 1px 0 rgba(255,255,255,.28);
-  transition:box-shadow .3s, transform .3s cubic-bezier(.2,.7,.2,1)}
-.cl-link:hover .cl-avatar{box-shadow:0 10px 30px rgba(var(--brand-rgb,227,189,99),.55), inset 0 1px 0 rgba(255,255,255,.32);
-  transform:translateY(-2px) scale(1.05)}
-.cl-body{flex:1;min-width:0}
-.cl-body h3{margin:0 0 2px;font-size:16px;position:relative;display:inline-block;letter-spacing:.01em}
-/* the name grows a brand-coloured flourish beneath it as you arrive */
-.cl-body h3::after{content:"";position:absolute;left:0;bottom:-4px;height:2px;width:0;border-radius:2px;
-  background:linear-gradient(90deg, rgb(var(--brand-rgb,227,189,99)), rgba(var(--brand-rgb,227,189,99),0));
-  transition:width .4s cubic-bezier(.2,.7,.2,1)}
-.cl-link:hover .cl-body h3::after{width:100%}
-.cl-body p{margin:4px 0 7px;color:var(--muted);font-size:12.5px;line-height:1.5}
-.cl-ind{display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;padding:4px 10px;border-radius:99px;margin:2px 0 0;
-  border:1px solid color-mix(in srgb, currentColor 45%, transparent);
-  background:color-mix(in srgb, currentColor 13%, transparent)}
-/* the arrow rides in its own little dial, and fills with the brand colour */
-.cl-go{width:38px;height:38px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;
-  color:var(--accent);font-size:16px;font-weight:700;
-  border:1px solid rgba(var(--brand-rgb,227,189,99),.35);background:rgba(var(--brand-rgb,227,189,99),.07);
-  transition:transform .3s cubic-bezier(.2,.7,.2,1), background .25s, color .25s, box-shadow .25s, border-color .25s}
-.cl-link:hover .cl-go{transform:translateX(4px);color:#fff;border-color:transparent;
-  background:linear-gradient(135deg, rgb(var(--brand-rgb,227,189,99)), rgba(var(--brand-rgb,227,189,99),.72));
-  box-shadow:0 8px 22px rgba(var(--brand-rgb,227,189,99),.45)}
-/* ---- the cards tell more of the story ----
-   Every card carries a three-line excerpt of its own description; the
-   full story is one click away on its company page. */
-.cl-body .cl-desc{margin:9px 0 0;color:#a9bad4;font-size:12.5px;line-height:1.7;
-  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-/* ---- the card under the cursor steps forward; the rest fall back ----
-   Crossing the grid dims every card a touch, and the one under the
-   pointer comes back full-colour, lifts and glows in its own brand
-   colour (the border/shadow half lives at .cl-link:hover above, and the
-   spotlight + tilt still follow the cursor on top of this). The
-   transition must repeat the entrance timings exactly — this rule
-   replaces main .band .reveal's transition for cards by id specificity —
-   and adds a quick filter leg for the dim. */
-#companyGrid .cl-link{transition:opacity .7s cubic-bezier(.2,.7,.2,1) calc(var(--i,0) * 60ms),
-  transform .9s cubic-bezier(.2,.7,.2,1) calc(var(--i,0) * 60ms),filter .35s ease}
-#companyGrid:hover .cl-link{filter:saturate(.68) brightness(.78)}
-#companyGrid .cl-link:hover{filter:none;transform:translateY(-4px);z-index:2}
-/* ---- and they arrive with a little theatre ----
-   Once the IntersectionObserver adds .in: a light sweeps once across the
-   card face, the badge pops and the arrow slides home — each staggered by
-   the card's --i index behind the swing itself. */
-.cl-link::after{content:"";position:absolute;top:0;bottom:0;left:0;width:38%;pointer-events:none;opacity:0;
-  background:linear-gradient(100deg,transparent,rgba(235,242,255,.06) 42%,rgba(235,242,255,.13) 50%,rgba(235,242,255,.06) 58%,transparent);
-  transform:translateX(-160%) skewX(-16deg)}
-.cl-link.in::after{animation:clSweep 1.15s cubic-bezier(.25,.6,.25,1) calc(var(--i,0) * 60ms + .3s) both}
-@keyframes clSweep{0%{transform:translateX(-160%) skewX(-16deg);opacity:0}
-  18%{opacity:1}82%{opacity:1}100%{transform:translateX(340%) skewX(-16deg);opacity:0}}
-@keyframes clPop{0%{transform:scale(.35);opacity:0}62%{transform:scale(1.1);opacity:1}100%{transform:scale(1);opacity:1}}
-#companyGrid .cl-link.in .cl-avatar{animation:clPop .6s cubic-bezier(.2,.75,.3,1.2) calc(var(--i,0) * 60ms + .12s) backwards}
-@keyframes clArrow{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
-#companyGrid .cl-link.in .cl-go{animation:clArrow .5s cubic-bezier(.2,.7,.2,1) calc(var(--i,0) * 60ms + .34s) backwards}
+.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;margin-top:36px}
+@media (max-width:700px){.cards{grid-template-columns:1fr;gap:16px}}
 
-/* ---- the hover preview: pause on a card and its full story rises out ----
-   The panel floats above the grid in the company's own colours; the card
-   below stays lit so you can see what you're pointing at. */
-#companyGrid .cl-link.previewing{filter:none;transform:translateY(-4px);z-index:2}
-.cl-pop{position:fixed;z-index:80;border-radius:18px;color:var(--text);cursor:pointer;overflow:hidden;
-  background:radial-gradient(430px 210px at 88% -12%, rgba(var(--brand-rgb,227,189,99),.16), transparent 62%),
-    linear-gradient(165deg, rgba(255,255,255,.06), rgba(255,255,255,.02) 42%, rgba(9,15,31,.6)),
-    rgba(10,16,30,.92);
-  border:1px solid rgba(var(--brand-rgb,227,189,99),.55);
-  box-shadow:0 24px 56px rgba(2,6,18,.55), 0 0 42px rgba(var(--brand-rgb,227,189,99),.16), inset 0 1px 0 rgba(255,255,255,.07);
-  backdrop-filter:blur(14px);padding:14px 16px 12px;
-  opacity:0;visibility:hidden;transform:translateY(12px) scale(.95);transform-origin:50% 85%;
-  /* closing: sink and fade away, staying visible until the end of it */
-  transition:transform .4s cubic-bezier(.4,.6,.4,1), opacity .25s ease,
-    left .45s cubic-bezier(.22,.85,.25,1), top .45s cubic-bezier(.22,.85,.25,1),
-    visibility 0s .4s linear}
-.cl-pop.open{opacity:1;visibility:visible;transform:none;
-  /* opening: this list deliberately omits the closing `visibility` delay —
-     with it, the panel animates while still invisible and then pops in all
-     at once the moment the delay ends */
-  transition:transform .6s cubic-bezier(.22,.85,.25,1), opacity .35s ease,
-    left .45s cubic-bezier(.22,.85,.25,1), top .45s cubic-bezier(.22,.85,.25,1)}
-.cp-head{display:flex;align-items:center;gap:12px}
-.cp-head .cl-avatar{width:44px;height:44px;border-radius:13px;font-size:18px}
-.cp-title{min-width:0;flex:1}
-.cp-title h3{margin:0;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cp-title p{margin:1px 0 0;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cp-head .cl-ind{margin-left:auto;flex:none;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* a few lines of the story, clamped — the profile page has the rest */
-.cp-text{margin-top:9px;font-size:12.5px;line-height:1.6;color:#b9c7dd;
-  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5;line-clamp:5;overflow:hidden}
-.cp-foot{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px;padding-top:9px;
-  border-top:1px solid rgba(255,255,255,.08);font-size:10.5px;font-weight:800;letter-spacing:.14em;
-  text-transform:uppercase;color:rgb(var(--brand-rgb,227,189,99))}
+/* ---- the company card ----
+   A brand-coloured view on top (a big serif initial over the district's
+   own mountain ridge) and a dark sheet below it with the name. On a mouse,
+   resting on the card slides the sheet up over the view and the story
+   comes in underneath: transform and opacity only, nothing that makes the
+   browser lay the page out again, so it stays smooth on any machine.
+   Touch screens get the open layout straight away (see the media query). */
+.cl-link{--h:340px;--rise:138px;display:block;position:relative;isolation:isolate;overflow:hidden;
+  height:var(--h);border-radius:22px;color:var(--text);
+  background:#0a1430;border:1px solid rgba(var(--haze-rgb),.16);
+  box-shadow:0 12px 30px rgba(2,6,18,.35)}
+/* the entrance (at id specificity, or main .band .reveal's timing wins) */
+#companyGrid .cl-link{transition:opacity .7s cubic-bezier(.2,.7,.2,1) calc(var(--i,0) * 70ms),
+  transform .9s cubic-bezier(.2,.7,.2,1) calc(var(--i,0) * 70ms)}
+/* once the entrance is over (city.js adds .settled) the card answers the
+   pointer quickly instead of with its slow, staggered rise */
+#companyGrid .cl-link.settled{transition:transform .55s cubic-bezier(.22,.9,.24,1),opacity .4s ease,
+  border-color .4s ease,box-shadow .55s ease}
+
+/* the view: brand light, a fine diagonal weave, the initial and the ridge */
+.cl-media{display:block;position:absolute;inset:0 0 auto 0;height:200px;overflow:hidden;
+  background:
+    radial-gradient(120% 95% at 88% -10%, rgba(var(--brand-rgb),.62), transparent 58%),
+    radial-gradient(90% 90% at -5% 110%, rgba(var(--brand-rgb),.28), transparent 62%),
+    linear-gradient(160deg,#13224a,#070f24);
+  transform-origin:50% 30%;transition:transform 1s cubic-bezier(.22,.9,.24,1)}
+.cl-media::before{content:"";position:absolute;inset:0;opacity:.5;
+  background:repeating-linear-gradient(135deg,rgba(255,255,255,.035) 0 1px,transparent 1px 11px)}
+.cl-glyph{position:absolute;right:22px;top:-26px;font-family:var(--font-display);font-weight:700;
+  font-size:200px;line-height:1;color:rgba(255,255,255,.07);-webkit-text-stroke:1px rgba(255,255,255,.2);
+  transition:transform 1s cubic-bezier(.22,.9,.24,1)}
+/* the company's own logo, whole, on a tile floating in the view */
+.cl-logo{position:absolute;right:22px;top:22px;height:64px;min-width:64px;max-width:58%;padding:0 16px;
+  display:flex;align-items:center;justify-content:center;border-radius:16px;box-sizing:border-box;
+  box-shadow:0 12px 28px rgba(2,6,18,.35),inset 0 0 0 1px rgba(255,255,255,.18)!important;
+  transition:transform 1s cubic-bezier(.22,.9,.24,1)}
+.cl-logo.has-logo img{width:auto;height:62%;max-width:100%;padding:0}
+.cl-ridge{position:absolute;left:0;right:0;bottom:12px;width:100%;height:92px;
+  transition:transform 1s cubic-bezier(.22,.9,.24,1)}
+.cl-ridge .r1{fill:rgba(var(--brand-rgb),.3)}
+.cl-ridge .r2{fill:#0a1430;opacity:.9}
+.cl-num{position:absolute;left:22px;top:18px;font-size:11px;font-weight:800;letter-spacing:.22em;
+  color:rgba(255,255,255,.72)}
+.cl-num::after{content:"";display:inline-block;vertical-align:middle;width:26px;height:1px;margin-left:10px;
+  background:rgba(255,255,255,.4)}
+
+/* the sheet: overlaps the view a little, taller than the card so there is
+   more of it to slide up into sight */
+.cl-sheet{display:block;position:absolute;left:0;right:0;top:184px;height:var(--h);padding:40px 24px 0;
+  background:linear-gradient(180deg,#0c1735,#0a1430 120px);border-radius:22px 22px 0 0;
+  box-shadow:0 -14px 30px rgba(2,6,18,.35);
+  transition:transform .6s cubic-bezier(.22,.9,.24,1)}
+.cl-sheet .cl-avatar{position:absolute;left:24px;top:-28px;width:56px;height:56px;border-radius:16px;
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;color:#fff;
+  box-shadow:0 10px 26px rgba(var(--brand-rgb),.45),0 0 0 4px #0c1735,inset 0 1px 0 rgba(255,255,255,.3)}
+.cl-go{position:absolute;right:22px;top:-19px;width:38px;height:38px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff;
+  background:rgb(var(--brand-rgb));box-shadow:0 8px 20px rgba(var(--brand-rgb),.45),0 0 0 4px #0c1735;
+  transform:rotate(-45deg);transition:transform .5s cubic-bezier(.22,.9,.24,1)}
+.cl-sheet h3{margin:0;font-family:var(--font-display);font-size:27px;font-weight:600;line-height:1.08;
+  letter-spacing:.005em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cl-tag{margin:5px 0 0;color:var(--muted);font-size:13px;line-height:1.5;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cl-meta{display:flex;align-items:center;gap:10px;margin-top:14px;font-size:11.5px;color:var(--muted)}
+.cl-ind{display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+  padding:4px 10px;border-radius:99px;white-space:nowrap;
+  border:1px solid color-mix(in srgb,currentColor 45%,transparent);
+  background:color-mix(in srgb,currentColor 13%,transparent)}
+.cl-since b{color:var(--text);font-weight:700}
+/* the story waits below the fold of the card */
+.cl-more{display:block;margin-top:16px;padding-top:14px;border-top:1px solid rgba(var(--haze-rgb),.14);
+  transition:opacity .45s ease .05s,transform .6s cubic-bezier(.22,.9,.24,1)}
+.cl-desc{margin:0;color:#b4c3da;font-size:13px;line-height:1.65;
+  display:-webkit-box;-webkit-line-clamp:4;line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.cl-cta{display:inline-flex;align-items:center;gap:8px;margin-top:12px;font-size:10.5px;font-weight:800;
+  letter-spacing:.16em;text-transform:uppercase;color:rgb(var(--brand-rgb))}
+.cl-cta i{font-style:normal;transition:transform .4s cubic-bezier(.22,.9,.24,1)}
+
+/* ---- on a mouse: rest on a card and the story slides up ---- */
+@media (hover:hover) and (pointer:fine){
+  .cl-more{opacity:0;transform:translate3d(0,18px,0)}
+  .cl-link:hover,.cl-link:focus-visible{border-color:rgba(var(--brand-rgb),.6);
+    box-shadow:0 26px 60px rgba(2,6,18,.55),0 0 50px rgba(var(--brand-rgb),.22)}
+  #companyGrid .cl-link.settled:hover,#companyGrid .cl-link.settled:focus-visible{transform:translate3d(0,-6px,0)}
+  .cl-link:hover .cl-sheet,.cl-link:focus-visible .cl-sheet{transform:translate3d(0,calc(var(--rise) * -1),0)}
+  .cl-link:hover .cl-more,.cl-link:focus-visible .cl-more{opacity:1;transform:none}
+  .cl-link:hover .cl-media,.cl-link:focus-visible .cl-media{transform:scale(1.07)}
+  .cl-link:hover .cl-glyph,.cl-link:focus-visible .cl-glyph{transform:translate3d(-10px,-8px,0)}
+  .cl-link:hover .cl-logo,.cl-link:focus-visible .cl-logo{transform:translate3d(0,-6px,0) scale(.94)}
+  .cl-link:hover .cl-ridge,.cl-link:focus-visible .cl-ridge{transform:translate3d(0,-10px,0)}
+  .cl-link:hover .cl-go,.cl-link:focus-visible .cl-go{transform:none}
+  .cl-link:hover .cl-cta i{transform:translateX(4px)}
+  /* the other cards step back (opacity only: cheap to animate) */
+  #companyGrid:has(.cl-link.settled:hover) .cl-link.settled:not(:hover){opacity:.55}
+}
+/* ---- touch screens: the open layout, no hover needed ---- */
+@media not ((hover:hover) and (pointer:fine)){
+  .cl-link{height:auto}
+  .cl-media{position:relative;height:150px}
+  .cl-sheet{position:relative;top:auto;height:auto;margin-top:-18px;padding-bottom:22px}
+  .cl-desc{-webkit-line-clamp:3;line-clamp:3}
+}
+@media (max-width:420px){
+  .cl-sheet{padding-left:18px;padding-right:18px}
+  .cl-sheet .cl-avatar{left:18px}
+  .cl-sheet h3{font-size:24px}
+}
+/* ---------- contact: a postcard from the summit ----------
+   Night-sky paper with gold ink inside an airmail border (gold and sky
+   stripes). Left: the message, written on ruled lines; right: a perforated
+   stamp carrying the group's monogram, a "Summit Post" postmark, and the
+   address lines. It lands with a slight tilt the first time it scrolls
+   into view (js/contact.js adds .landed), the stamp drops on and the
+   postmark thumps down after it. Transform and opacity only. */
+.band.contact{padding-bottom:110px}
+.postcard{--pc-ink:#e3bd63;--pc-sky:#5fb4ee;position:relative;max-width:980px;margin:38px auto 0;padding:9px;border-radius:20px;
+  background:repeating-linear-gradient(135deg,var(--pc-ink) 0 16px,#0a1430 16px 24px,var(--pc-sky) 24px 40px,#0a1430 40px 48px);
+  box-shadow:0 30px 70px rgba(2,6,18,.55),0 0 0 1px rgba(255,255,255,.06);
+  transform:rotate(-.8deg);transition:transform .7s cubic-bezier(.22,.9,.24,1),box-shadow .7s ease}
+.postcard:hover{transform:rotate(0deg) translate3d(0,-4px,0);box-shadow:0 38px 80px rgba(2,6,18,.6),0 0 60px rgba(var(--ember-rgb),.12)}
+.pc-paper{position:relative;display:grid;grid-template-columns:1.12fr 1px 1fr;gap:34px;padding:34px 36px 30px;border-radius:13px;overflow:hidden;
+  background:
+    radial-gradient(420px 260px at 92% 0%,rgba(var(--ember-rgb),.10),transparent 70%),
+    radial-gradient(520px 320px at 0% 100%,rgba(95,180,238,.08),transparent 70%),
+    linear-gradient(160deg,#101d3f,#0a142e 60%,#0b1633)}
+/* paper tooth: a faint weave, like card stock under lamplight */
+.pc-paper::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;
+  background:repeating-linear-gradient(0deg,rgba(255,255,255,.012) 0 1px,transparent 1px 3px),
+             repeating-linear-gradient(90deg,rgba(255,255,255,.01) 0 1px,transparent 1px 4px)}
+.pc-rule{background:linear-gradient(180deg,transparent,rgba(var(--ember-rgb),.4) 12%,rgba(var(--ember-rgb),.4) 88%,transparent)}
+
+/* the message side: handwriting on ruled lines */
+.pc-message{position:relative;display:flex;flex-direction:column;gap:14px;min-width:0}
+.pc-greet{margin:0 0 4px;font-family:var(--font-display);font-style:italic;font-weight:600;font-size:30px;color:var(--ember-soft);line-height:1.1}
+.pc-field{display:flex;flex-direction:column;gap:3px}
+.pc-field span{font-size:10px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:rgba(var(--ember-rgb),.75)}
+.pc-field input,.pc-field textarea{width:100%;box-sizing:border-box;border:0;border-radius:0;padding:6px 2px 7px;background:transparent;
+  color:var(--text);font-family:var(--font-display);font-size:21px;font-weight:600;line-height:30px;outline:none;
+  border-bottom:1px solid rgba(var(--haze-rgb),.35);transition:border-color .25s}
+.pc-field textarea{resize:vertical;min-height:122px;border-bottom:0;
+  /* ruled lines that scroll with the writing */
+  background:repeating-linear-gradient(180deg,transparent 0 29px,rgba(var(--haze-rgb),.35) 29px 30px);background-attachment:local}
+.pc-field input::placeholder,.pc-field textarea::placeholder{color:rgba(var(--haze-rgb),.55);font-style:italic}
+.pc-field input:focus{border-bottom-color:var(--accent)}
+.pc-field textarea:focus{background-image:repeating-linear-gradient(180deg,transparent 0 29px,rgba(var(--ember-rgb),.55) 29px 30px)}
+.pc-send-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:4px}
+.pc-send{margin:0;border:0;cursor:pointer;font-family:inherit}
+.pc-send span{font-size:16px;line-height:1}
+.pc-note{color:var(--muted);font-size:11.5px;line-height:1.5;max-width:260px}
+.pc-note.bad{color:#ffb4a8}
+
+/* the address side */
+.pc-address{position:relative;display:flex;flex-direction:column;min-width:0}
+.pc-corner{position:relative;height:118px;margin-bottom:10px}
+.pc-stamp{position:absolute;right:0;top:0;width:92px;height:110px;box-sizing:border-box;padding:10px 10px 8px;
+  display:flex;flex-direction:column;align-items:center;justify-content:space-between;
+  background:linear-gradient(160deg,#1a2b57,#0e1a3a);border:1px solid rgba(var(--ember-rgb),.55);
+  box-shadow:0 8px 20px rgba(2,6,18,.45);transform:rotate(3deg)}
+/* the perforations: a row of paper-coloured holes centred on each edge */
+.pc-stamp::before{content:"";position:absolute;inset:-1px;pointer-events:none;
+  --hole:radial-gradient(circle,#0d1837 2.6px,transparent 3.1px);
+  background:var(--hole) 0 -4.5px/9px 9px repeat-x,var(--hole) 0 calc(100% + 4.5px)/9px 9px repeat-x,
+             var(--hole) -4.5px 0/9px 9px repeat-y,var(--hole) calc(100% + 4.5px) 0/9px 9px repeat-y}
+.pc-stamp img{width:62px;height:62px;display:block;filter:drop-shadow(0 2px 8px rgba(var(--ember-rgb),.35))}
+.pc-stamp span{font-family:var(--font-display);font-weight:700;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ember-soft)}
+.pc-postmark{position:absolute;right:52px;top:6px;width:200px;height:120px;z-index:2;pointer-events:none;
+  fill:none;stroke:rgba(var(--ember-rgb),.62);stroke-width:2;transform:rotate(-12deg);transform-origin:60px 60px}
+.pc-postmark text{fill:rgba(var(--ember-rgb),.72);stroke:none;font-family:var(--font);font-weight:800;text-anchor:middle}
+.pc-postmark .pm-ring{font-size:10.5px;letter-spacing:2.2px;text-anchor:start}
+.pc-postmark .pm-big{font-size:12px;letter-spacing:3px}
+.pc-postmark .pm-wave{stroke-width:2.2;stroke-linecap:round}
+.pc-to{margin:4px 0 10px;font-size:10.5px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:rgba(var(--ember-rgb),.75)}
+.pc-to b{font-family:var(--font-display);font-size:28px;font-weight:600;letter-spacing:.01em;text-transform:none;color:var(--text);margin-left:6px}
+.pc-lines{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.pc-lines li{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid rgba(var(--haze-rgb),.3)}
+.pc-line{flex:1;min-width:0;display:flex;align-items:center;gap:14px;color:var(--text)}
+.pc-line i{flex:none;width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-style:normal;font-size:17px;
+  color:var(--accent);border:1px solid rgba(var(--ember-rgb),.4);background:rgba(var(--ember-rgb),.07);
+  transition:background .25s,color .25s,transform .35s cubic-bezier(.22,.9,.24,1)}
+.pc-line span{min-width:0;display:flex;flex-direction:column;font-family:var(--font-display);font-size:clamp(17px,1.7vw,20px);font-weight:600;
+  white-space:nowrap;line-height:1.2}
+.pc-line small{font-family:var(--font);font-size:9.5px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-bottom:2px}
+.pc-line-addr span{white-space:normal;line-height:1.25}  /* the address runs to two lines by design */
+.pc-line:hover{color:var(--ember-soft)}
+.pc-line:hover i{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:var(--on-accent);transform:rotate(-8deg) scale(1.06)}
+.pc-copy{flex:none;cursor:pointer;padding:7px 12px;border-radius:99px;font:800 10px/1 var(--font);letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);background:transparent;border:1px solid rgba(var(--haze-rgb),.35);transition:color .2s,border-color .2s,background .2s}
+.pc-copy:hover{color:var(--accent);border-color:var(--accent)}
+.pc-copy.done{color:var(--on-accent);background:var(--accent);border-color:var(--accent)}
+.pc-sign{margin:auto 0 0;padding-top:18px;font-family:var(--font-display);font-style:italic;font-size:17px;color:var(--muted)}
+.foot-contact a{color:var(--muted)}
+.foot-contact a:hover{color:var(--accent)}
+
+/* ---- the landing ---- */
+.postcard{opacity:0;transform:translate3d(0,46px,0) rotate(-4deg)}
+.postcard.landed{opacity:1;transform:rotate(-.8deg);
+  transition:opacity .6s ease,transform 1.1s cubic-bezier(.2,.85,.25,1.08)}
+.postcard.landed:hover{transform:rotate(0deg) translate3d(0,-4px,0);transition:transform .7s cubic-bezier(.22,.9,.24,1),box-shadow .7s ease}
+.pc-stamp{opacity:0}
+.postcard.landed .pc-stamp{animation:pcStamp .6s cubic-bezier(.2,.8,.3,1.25) .55s both}
+@keyframes pcStamp{from{opacity:0;transform:translate3d(18px,-26px,0) rotate(14deg) scale(1.25)}to{opacity:1;transform:rotate(3deg)}}
+.pc-postmark{opacity:0}
+.postcard.landed .pc-postmark,.postcard.sent .pc-postmark{animation:pcMark .5s cubic-bezier(.3,1.5,.5,1) 1.05s both}
+.postcard.sent .pc-postmark{animation-delay:0s}
+@keyframes pcMark{0%{opacity:0;transform:rotate(-12deg) scale(1.7)}60%{opacity:1;transform:rotate(-12deg) scale(.94)}100%{opacity:1;transform:rotate(-12deg) scale(1)}}
+
+@media (max-width:820px){
+  .pc-paper{grid-template-columns:1fr;gap:26px;padding:26px 22px 24px}
+  .pc-rule{height:1px;background:linear-gradient(90deg,transparent,rgba(var(--ember-rgb),.4) 12%,rgba(var(--ember-rgb),.4) 88%,transparent)}
+  .pc-address{order:-2}                        /* the address (and the stamp) read first on a phone */
+  .pc-rule{order:-1}
+  .pc-sign{display:none}                       /* a sign-off reads oddly above the message */
+  .pc-line span{white-space:normal}            /* the email may break, only before the @ (a <wbr> in the markup) */
+}
+@media (max-width:420px){
+  .postcard{padding:7px}
+  .pc-greet{font-size:25px}
+  .pc-line span{font-size:17px}
+  .pc-line{gap:10px}
+  .pc-line i{width:34px;height:34px;font-size:15px}
+  .pc-postmark{right:40px;transform:rotate(-12deg) scale(.85)}
+}
 @media (prefers-reduced-motion: reduce){
-  .cl-pop{transition:opacity .15s ease}
+  .postcard,.postcard.landed,.postcard.landed:hover{opacity:1;transform:none;transition:none}
+  .pc-stamp,.pc-postmark{opacity:1;animation:none!important}
 }
 .feat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin-top:36px}
 .feat{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px}
@@ -603,9 +707,8 @@ footer.site-footer nav a:hover{color:var(--accent)}
   header.hero.labels-on .map-labels,header.hero .hud,.company-chips{opacity:1!important}
   .reveal{opacity:1;transform:none}
   main .band .reveal,.reveal{transition:none}
-  /* none of the card theatre either — the cards are simply there */
-  .cl-link::after{display:none}
-  #companyGrid .cl-link .cl-avatar,#companyGrid .cl-link .cl-go{animation:none}
+  /* the cards are simply there; the hover reveal stays, minus the motion */
+  .cl-link,.cl-sheet,.cl-media,.cl-glyph,.cl-logo,.cl-ridge,.cl-more,.cl-go{transition:none!important}
 }
 
 /* ---------- map labels: readable names that follow the rooftops ----------
