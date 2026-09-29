@@ -381,16 +381,19 @@ header.hero::after{content:"";position:absolute;inset:auto 0 0 0;height:90px;z-i
    one still fades gently, its transition lives on the faded state itself */
 .hero-overlay.faded{opacity:0;visibility:hidden;transition:opacity .9s ease,visibility .9s}
 .hero-kicker{font-size:11px;font-weight:800;letter-spacing:.34em;color:#c3d8f2;text-shadow:0 2px 14px rgba(3,10,24,.85)}
-.hero-head{font-family:var(--font-display);font-size:clamp(46px,8.4vw,92px);font-weight:600;line-height:.98;letter-spacing:-.005em;margin:18px 0 14px;text-shadow:0 10px 40px rgba(3,10,24,.65)}
+.hero-head{font-family:var(--font-display);font-size:clamp(46px,8.4vw,92px);font-weight:600;line-height:.98;letter-spacing:-.005em;margin:18px 0 14px;text-shadow:0 2px 8px rgba(3,10,24,.9),0 10px 40px rgba(3,10,24,.65)}
 /* the brand name: bright loader-gold, a sheen sweeping through it and a
    soft breathing glow around the letters (the wrap carries the word-in
    rise, so the entrance and the shine never fight) */
 .hero-head .grad{font-style:italic;font-weight:500;padding-right:.08em;
   background:linear-gradient(105deg,#fff6cf 0%,#ffe08a 25%,#f7c247 50%,#ffe9a8 75%,#eec13f 100%);
-  background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+  background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none;
   animation:grad-sheen 4.6s ease-in-out infinite,grad-glow 3.2s ease-in-out infinite}
 @keyframes grad-sheen{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
-@keyframes grad-glow{0%,100%{filter:drop-shadow(0 3px 12px rgba(255,215,110,.30))}50%{filter:drop-shadow(0 3px 22px rgba(255,226,132,.55))}}
+/* the dark layer gives the gold a crisp edge against the sky, the warm one
+   is the glow; together the letters stay readable over lamps and mist */
+@keyframes grad-glow{0%,100%{filter:drop-shadow(0 2px 4px rgba(3,10,24,.8)) drop-shadow(0 3px 12px rgba(255,215,110,.30))}
+  50%{filter:drop-shadow(0 2px 4px rgba(3,10,24,.8)) drop-shadow(0 3px 22px rgba(255,226,132,.55))}}
 .hero-cta{display:flex;gap:12px;margin-top:26px;flex-wrap:wrap;justify-content:center}
 .hero-cta .btn{margin:0;pointer-events:auto}
 .hero-sub{max-width:560px;color:#e2ecfb;font-size:15.5px;line-height:1.65;text-shadow:0 2px 12px rgba(3,10,24,.85)}
