@@ -1202,9 +1202,10 @@ function buildUI() {
   night.addEventListener('click', toggleNight);
   document.getElementById('btnHome').addEventListener('click', flyHome);
 
-  /* ambient sound: off until asked for (see ambience.js). The night bed is
-     separate — the recording from /audio is there from the first moment of
-     the district, softly, as soon as the visitor has touched anything */
+  /* ambient sound: on from the start, off only when asked (see ambience.js) —
+     the engine itself waits for the visitor's first touch. The night bed is
+     the same idea with the recording from /audio, softly, from the first
+     moment of the district */
   nightBed = createNightBed('audio/audio.mp3', { nightMix: () => envMix });
   const soundBtn = document.getElementById('btnSound');
   if (soundBtn) {

@@ -29,8 +29,8 @@
   <div class="nav-spacer"></div>
   <div class="hud-actions">
     <button id="btnNight" class="icon-btn" title="Toggle day / night" aria-label="Toggle day or night">☀️</button>
-    <button id="btnSound" class="icon-btn" type="button" title="Ambient sound" aria-label="Ambient sound"
-            aria-pressed="false">🔇</button>
+    <button id="btnSound" class="icon-btn" type="button" title="Mute ambient sound" aria-label="Ambient sound"
+            aria-pressed="true">🔊</button>
     <button id="btnHome" class="icon-btn" title="Reset view" aria-label="Reset view">⟳</button>
     <button id="btnFull" class="icon-btn" title="Fullscreen" aria-label="Fullscreen">⛶</button>
   </div>
@@ -91,10 +91,6 @@ if (location.protocol === 'file:') {
   <!-- drifts away with the scroll; the outer overlay keeps its own fade -->
   <div class="hero-drift">
   <h1 class="hero-head">Welcome to <span class="grad-wrap"><span class="grad">Binomar&nbsp;Group</span></span></h1>
-  <div class="hero-cta">
-    <button class="btn" id="ctaExplore" type="button">🧭 Explore the map</button>
-    <a class="btn ghost2" href="#companies">Our companies</a>
-  </div>
   </div>
 </div>
 
@@ -203,12 +199,6 @@ if (location.protocol === 'file:') {
   addEventListener('scroll', function once() {
     if (scrollY > 30) { go(); removeEventListener('scroll', once); }
   }, { passive: true });
-  /* the hero CTA opens the finder (city.js listens for the event) */
-  var cta = document.getElementById('ctaExplore');
-  if (cta) cta.addEventListener('click', function () {
-    go();
-    dispatchEvent(new Event('binomar:finder'));
-  });
 })();
 </script>
 

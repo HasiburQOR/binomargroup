@@ -33,7 +33,7 @@ function writePref(v) {
 export function createAmbience({ onChange } = {}) {
   const AC = window.AudioContext || window.webkitAudioContext;
   let ctx = null, n = null;
-  let on = false, awake = false;              // wanted by the visitor / actually running
+  let on = readPref() !== 'off', awake = false;   // wanted (on unless muted before) / actually running
   let levelClock = 0, suspendTimer = 0;
   const voiceTimers = [0.3, 0.9];
   let birdTimer = 2.5, crackleTimer = 0.2;
@@ -122,8 +122,9 @@ export function createAmbience({ onChange } = {}) {
     if (onChange) onChange(on);
   }
 
-  /* a remembered "on" can only start once the visitor touches the page */
-  if (readPref() === 'on' && AC) {
+  /* sound is on from the start — only an explicit past mute turns it away —
+     but the engine still cannot start before the visitor touches the page */
+  if (on && AC) {
     on = true;
     const first = () => {
       removeEventListener('pointerdown', first, true);
