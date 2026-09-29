@@ -89,6 +89,53 @@ const PR_FLOOR = 0.65, PR_WIN = 40, PR_DROP = 1 / 45, PR_RISE = 1 / 57;
 let ftAcc = 0, ftN = 0, prHold = 0, shadowTick = 0;
 let bloomOff = false;                // the governor gave up the bloom pass
 let hudStats = null, hudCount = 0, hudLast = 0;
+let interacting = false;             // a pointer is down on the canvas (see initThree)
+let lastGovStep = -9;                // governor clock: no two steps within 3 s
+
+/* ---------------- the black box ----------------
+   A black screen that only a manual refresh clears takes its evidence with
+   it. The last few notable events — frame errors, a lost WebGL context,
+   governor steps, a NaN camera — are kept in localStorage, so the NEXT load
+   can show what killed the previous one (?debug=1 shows it unconditionally). */
+const BLACKBOX_KEY = 'binomar-blackbox';
+let blackbox = [];
+try { blackbox = JSON.parse(localStorage.getItem(BLACKBOX_KEY) || '[]'); } catch (e) { blackbox = []; }
+const priorBlackbox = Array.isArray(blackbox) ? blackbox : [];
+blackbox = [];
+function blackboxLog(kind, detail) {
+  blackbox.push({ kind, detail: String(detail).slice(0, 300), at: Math.round(performance.now()) });
+  if (blackbox.length > 14) blackbox.shift();
+  try { localStorage.setItem(BLACKBOX_KEY, JSON.stringify(blackbox)); } catch (e) { /* private mode */ }
+  console.warn('[binomar blackbox]', kind, String(detail).slice(0, 300));
+}
+/* after a crashed session (or with ?debug=1) a small strip lists the last
+   recorded events, so the failing machine can report itself */
+function showBlackbox() {
+  const force = /[?&]debug=1/.test(location.search);
+  const crashed = priorBlackbox.some((e) => e && (e.kind === 'frame-error' || e.kind === 'contextlost' || e.kind === 'nan-camera'));
+  if (!priorBlackbox.length || (!crashed && !force)) return;
+  const strip = document.createElement('div');
+  strip.style.cssText = 'position:fixed;bottom:64px;left:18px;z-index:90;max-width:min(560px,80vw);'
+    + 'background:rgba(8,10,24,.92);color:#e8e2d2;border:1px solid rgba(227,189,99,.35);border-radius:10px;'
+    + 'padding:10px 12px;font:11px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;backdrop-filter:blur(8px)';
+  const title = document.createElement('b');
+  title.textContent = crashed ? 'last session ended badly — recorded events:' : 'black box (last session):';
+  title.style.cssText = 'display:block;margin-bottom:4px;color:#f0c96a';
+  strip.appendChild(title);
+  for (const e of priorBlackbox.slice(-10)) {
+    const line = document.createElement('div');
+    line.textContent = ((((e && e.at) || 0) / 1000).toFixed(1) + 's  ' + (e && e.kind) + '  ' + ((e && e.detail) || '')).slice(0, 220);
+    strip.appendChild(line);
+  }
+  const x = document.createElement('button');
+  x.type = 'button';
+  x.textContent = 'dismiss';
+  x.style.cssText = 'margin-top:6px;background:none;border:1px solid rgba(227,189,99,.35);color:#f0c96a;'
+    + 'border-radius:6px;padding:2px 10px;cursor:pointer;font:11px ui-monospace,monospace';
+  x.addEventListener('click', () => strip.remove());
+  strip.appendChild(x);
+  document.body.appendChild(strip);
+}
 
 /* small, forgiving preference store — private mode throws on access */
 function readPref(k) {
@@ -244,10 +291,12 @@ function initThree() {
   /* a dropped GPU context paints the canvas black until reload — some
      integrated-GPU PCs lose it under sustained dragging. Ask the driver to
      hand it back (three.js rebuilds its GL state on restore); if it will
-     not, reload rather than leave a dead black hero. */
+     not, try ONE automatic reload per session — never a loop; after that a
+     button the user presses. Everything lands in the black box either way. */
   let glBack = false;
   renderer.domElement.addEventListener('webglcontextlost', (ev) => {
     ev.preventDefault();
+    blackboxLog('contextlost', 'WebGL context lost');
     const loader = document.getElementById('loader');
     if (loader) {
       loader.classList.remove('hide', 'opening');
@@ -255,11 +304,30 @@ function initThree() {
       const sub = loader.querySelector('.loader-sub');
       if (sub) sub.textContent = 'Restoring the view…';
     }
-    setTimeout(() => { try { renderer.forceContextRestore(); } catch (err) { /* already gone */ } }, 900);
-    setTimeout(() => { if (!glBack) location.reload(); }, 6000);
+    let reloads = 0;
+    try { reloads = Number(sessionStorage.getItem('binomar-ctx') || 0); } catch (err) { /* private mode */ }
+    if (reloads < 1) {
+      try { sessionStorage.setItem('binomar-ctx', '1'); } catch (err) { /* ignore */ }
+      setTimeout(() => { try { renderer.forceContextRestore(); } catch (err) { /* already gone */ } }, 900);
+      setTimeout(() => { if (!glBack) location.reload(); }, 6000);
+      return;
+    }
+    if (loader) {
+      const sub = loader.querySelector('.loader-sub');
+      if (sub) sub.textContent = 'The graphics driver dropped the 3D view.';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = 'Reload the view';
+      btn.style.cssText = 'margin-top:10px;padding:8px 22px;border-radius:99px;cursor:pointer;'
+        + 'border:1px solid rgba(227,189,99,.55);background:rgba(227,189,99,.12);color:#f0c96a;'
+        + 'font:600 14px system-ui,sans-serif';
+      btn.addEventListener('click', () => location.reload());
+      loader.appendChild(btn);
+    }
   }, false);
   renderer.domElement.addEventListener('webglcontextrestored', () => {
     glBack = true;
+    blackboxLog('contextrestored', 'context handed back');
     renderer.resetState();
     const loader = document.getElementById('loader');
     if (loader) loader.classList.add('hide');
@@ -267,6 +335,16 @@ function initThree() {
 
   addEventListener('resize', onResize);
   if (window.ResizeObserver) new ResizeObserver(() => onResize()).observe(wrapEl);
+
+  blackboxLog('boot', Q.tier + ' tier · ' + String(Q.gpu).slice(0, 90));
+
+  /* the governor must never reallocate render buffers while a pointer is on
+     the canvas: dragging is exactly when frame time spikes, and a resize
+     under load is a black frame (or worse) on some drivers */
+  renderer.domElement.addEventListener('pointerdown', () => { interacting = true; }, { passive: true });
+  addEventListener('pointerup', () => { interacting = false; }, { passive: true });
+  addEventListener('pointercancel', () => { interacting = false; }, { passive: true });
+  addEventListener('blur', () => { interacting = false; }, { passive: true });
 }
 
 /* ---------------- static environment: sky + weather (terrain is built in buildDistrict) ---------------- */
@@ -2035,11 +2113,13 @@ function initSkyPass() {
    skipped too, while shaders are still compiling. */
 function setResolution(s) {
   prScale = s;
+  blackboxLog('gov-res', Math.round(s * 100) + '% resolution');
   renderer.setPixelRatio(Q.pixelRatio * prScale);
   if (composer) composer.setPixelRatio(Q.pixelRatio * prScale);
 }
 
 function dropShadows() {
+  blackboxLog('gov-shadows', 'shadows off');
   sun.castShadow = false;
   renderer.shadowMap.enabled = false;
   /* every lit material bakes the shadow count into its shader: rebuild */
@@ -2056,20 +2136,24 @@ function governQuality(rawDt, t) {
   if (ftN < PR_WIN) return;
   const avg = ftAcc / ftN;
   ftAcc = ftN = 0;
+  /* never act mid-interaction or sooner than 3 s after the last step: the
+     step itself spikes frame time, which would invite another step */
+  if (interacting || camTween || t - lastGovStep < 3) return;
   if (avg > PR_DROP) {
     if (prScale > PR_FLOOR) {
       setResolution(Math.max(PR_FLOOR, prScale - 0.12));
-      prHold = 90;                                 // let the new setting settle
+      prHold = 90; lastGovStep = t;               // let the new setting settle
     } else if (composer && !bloomOff) {
       bloomOff = true;
-      prHold = 120;
+      blackboxLog('gov-bloom', 'bloom off');
+      prHold = 120; lastGovStep = t;
     } else if (renderer.shadowMap.enabled) {
       dropShadows();
-      prHold = 120;
+      prHold = 120; lastGovStep = t;
     }
   } else if (avg < PR_RISE && prScale < 1) {
     setResolution(Math.min(1, prScale + 0.08));
-    prHold = 240;
+    prHold = 240; lastGovStep = t;
   }
 }
 
@@ -2077,11 +2161,41 @@ function governQuality(rawDt, t) {
 const clock = new THREE.Clock();
 const easeOutCubic = (x) => 1 - Math.pow(1 - x, 3);
 
+/* a frame that throws used to leave the loop alive but painting nothing —
+   the black screen that stays until a manual refresh. It is caught, logged
+   to the black box, and the loop keeps trying. A NaN camera or pivot paints
+   nothing either (the clear colour, forever): watched for and reset. */
+let lastFrameErr = '', lastFrameErrAt = -9, nanTick = 0;
+
 function animate() {
   requestAnimationFrame(animate);
   const rawDt = clock.getDelta();
   let dt = Math.min(rawDt, 0.05);
   const t = clock.elapsedTime;
+  if (++nanTick >= 30) {                           // twice a second is plenty
+    nanTick = 0;
+    const pn = camera.position, tn = controls.target;
+    if (!isFinite(pn.x + pn.y + pn.z) || !isFinite(tn.x + tn.y + tn.z)) {
+      blackboxLog('nan-camera',
+        'pos(' + pn.x + ',' + pn.y + ',' + pn.z + ') target(' + tn.x + ',' + tn.y + ',' + tn.z + ')');
+      pn.copy(HOME.pos);
+      tn.copy(HOME.target);
+      camTween = null; zoomTween = null;
+      controls.update();
+    }
+  }
+  try {
+    animateFrame(rawDt, dt, t);
+  } catch (err) {
+    const msg = (err && err.message) || String(err);
+    if (msg !== lastFrameErr || t - lastFrameErrAt > 2) {   // not 60 logs a second
+      lastFrameErr = msg; lastFrameErrAt = t;
+      blackboxLog('frame-error', msg + ' | ' + String((err && err.stack) || '').slice(0, 160));
+    }
+  }
+}
+
+function animateFrame(rawDt, dt, t) {
   /* the soundscape follows the view: night or day, how close the camera is
      to the plaza, how far into the sky pass — quieter behind the page, and
      silent when the map is out of sight */
@@ -2541,6 +2655,7 @@ async function main() {
     skipIntro: () => { endIntro(); camTween = null; flight = null; controls.enabled = true; },
     skyTo: (v) => { skyTarget = Math.min(1, Math.max(0, v)); }   // preview the sky pass without scrolling
   };
+  showBlackbox();                                  // evidence from a crashed previous session
   animate();
 
   requestAnimationFrame(() => {

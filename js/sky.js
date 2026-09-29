@@ -585,17 +585,23 @@ export function createNightSky(scene, q = {}) {
   const stars = makeStarPoints(q.stars);
   root.add(gradient, milky.pivot, stars);
 
-  const auroras = q.aurora === false ? [] : [
-    makeAuroraCurtain(R_AURORA, 300, 1.55, '#2fe0a8', '#1b7fd6', 0.0),
-    makeAuroraCurtain(R_AURORA * 0.86, 250, 1.15, '#7ef0c0', '#6f5cf0', 11.0),
-    makeAuroraCurtain(R_AURORA * 1.12, 340, 0.9, '#49d6ff', '#c06ef5', 23.0)
-  ];
-  if (auroras.length) {
-    auroras[0].position.y = 130; auroras[0].rotation.y = 0.35;
-    auroras[1].position.y = 150; auroras[1].rotation.y = 0.95;
-    auroras[2].position.y = 115; auroras[2].rotation.y = -0.45;
+  /* q.aurora is a curtain count (0–3): each curtain is a full fbm shader
+     stretched across much of the dome, so weak GPUs get one, not three */
+  const auroraDefs = [
+    [R_AURORA, 300, 1.55, '#2fe0a8', '#1b7fd6', 0.0, 130, 0.35],
+    [R_AURORA * 0.86, 250, 1.15, '#7ef0c0', '#6f5cf0', 11.0, 150, 0.95],
+    [R_AURORA * 1.12, 340, 0.9, '#49d6ff', '#c06ef5', 23.0, 115, -0.45]
+  ];                                               // …args, then [height, spin]
+  const auroraCount = typeof q.aurora === 'number' ? q.aurora : (q.aurora === false ? 0 : 3);
+  const auroras = [];
+  for (let i = 0; i < Math.min(3, Math.max(0, auroraCount)); i++) {
+    const d = auroraDefs[i];
+    const a = makeAuroraCurtain(d[0], d[1], d[2], d[3], d[4], d[5]);
+    a.position.y = d[6];
+    a.rotation.y = d[7];
+    auroras.push(a);
+    root.add(a);
   }
-  for (const a of auroras) root.add(a);
 
   const meteors = makeMeteors(q.meteors || 3);
   root.add(meteors.group);

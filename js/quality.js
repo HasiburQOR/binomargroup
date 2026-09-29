@@ -87,8 +87,10 @@ export function detectQuality() {
     birdFlocks: low ? 2 : 4,
 
     /* the soft glow of lit windows, lamps and the moon after dark — one full
-       post-processing pass, so the smallest devices go without */
-    bloom: !tiny,
+       post-processing pass over the whole frame. Some integrated GPUs lose
+       the GL context outright under it (night + full dome), so only the
+       high tier runs it; the governor can drop it later but never add it */
+    bloom: !low,
 
     /* the heaviest tree model a device plants (see createFlora in models.js) */
     floraTris: tiny ? 1800 : low ? 3600 : Infinity,
@@ -106,7 +108,7 @@ export function detectQuality() {
        sharp as it ever reads, and a quarter of the memory of 4096 */
     stars: tiny ? 320 : low ? 520 : 850,
     milkyWayWidth: 2048,
-    aurora: !tiny,
+    aurora: tiny ? 0 : low ? 1 : 3,    // curtains: each is a full fbm shader (see sky.js)
     meteors: tiny ? 1 : low ? 2 : 3
   };
 
