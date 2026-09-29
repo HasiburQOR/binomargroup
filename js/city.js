@@ -200,6 +200,20 @@ function initThree() {
   controls.autoRotateSpeed = AUTO_SPIN;
   controls.enabled = true;
 
+  /* right-drag / two-finger pan can walk the camera clean out of the sky
+     domes: past their radius the BackSide domes vanish and, after dark, the
+     near-black scene background reads as a black screen. Keep the pivot
+     within the district so that can never happen. */
+  const panClamp = new THREE.Vector3();
+  controls.addEventListener('change', () => {
+    const d = controls.target.length();
+    if (d > 260) {
+      panClamp.copy(controls.target).multiplyScalar(260 / d);
+      camera.position.add(panClamp.sub(controls.target));
+      controls.target.multiplyScalar(260 / d);
+    }
+  });
+
   hemi = new THREE.HemisphereLight(0xffffff, 0x5a7a4a, 0.85);
   sun = new THREE.DirectionalLight(0xfff2dd, 2.4);
   sun.position.set(132, 76, 92);
@@ -226,6 +240,30 @@ function initThree() {
     composer.addPass(bloomPass);
     composer.addPass(new OutputPass());         // tone mapping + sRGB, as the renderer would
   }
+
+  /* a dropped GPU context paints the canvas black until reload — some
+     integrated-GPU PCs lose it under sustained dragging. Ask the driver to
+     hand it back (three.js rebuilds its GL state on restore); if it will
+     not, reload rather than leave a dead black hero. */
+  let glBack = false;
+  renderer.domElement.addEventListener('webglcontextlost', (ev) => {
+    ev.preventDefault();
+    const loader = document.getElementById('loader');
+    if (loader) {
+      loader.classList.remove('hide', 'opening');
+      loader.style.setProperty('--p', '1');
+      const sub = loader.querySelector('.loader-sub');
+      if (sub) sub.textContent = 'Restoring the view…';
+    }
+    setTimeout(() => { try { renderer.forceContextRestore(); } catch (err) { /* already gone */ } }, 900);
+    setTimeout(() => { if (!glBack) location.reload(); }, 6000);
+  }, false);
+  renderer.domElement.addEventListener('webglcontextrestored', () => {
+    glBack = true;
+    renderer.resetState();
+    const loader = document.getElementById('loader');
+    if (loader) loader.classList.add('hide');
+  }, false);
 
   addEventListener('resize', onResize);
   if (window.ResizeObserver) new ResizeObserver(() => onResize()).observe(wrapEl);
@@ -1349,13 +1387,15 @@ function frameForViewport() {
 let finderQuery = '';
 
 function buildFinder() {
-  const btn = document.getElementById('btnFind');
   const panel = document.getElementById('finder');
   const input = document.getElementById('finderInput');
   const close = document.getElementById('finderClose');
-  if (!btn || !panel) return;
+  if (!panel) return;
 
-  btn.addEventListener('click', () => toggleFinder());
+  /* the toolbar 🔍 button is gone: "/" and this event open the finder,
+     so the hero CTA can still reach it without a button */
+  addEventListener('binomar:finder', () => toggleFinder(true));
+
   close.addEventListener('click', () => toggleFinder(false));
   input.addEventListener('input', () => {
     finderQuery = input.value.trim().toLowerCase();
@@ -1371,13 +1411,12 @@ function buildFinder() {
 }
 
 function toggleFinder(force) {
-  const btn = document.getElementById('btnFind');
   const panel = document.getElementById('finder');
   const input = document.getElementById('finderInput');
+  if (!panel) return;
   const open = force === undefined ? panel.hidden : force;
   panel.hidden = !open;
-  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-  if (open) { renderFinderList(); input.focus(); input.select(); } else { btn.focus(); }
+  if (open && input) { renderFinderList(); input.focus(); input.select(); }
 }
 
 function renderFinderList() {

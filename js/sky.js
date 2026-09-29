@@ -611,6 +611,7 @@ export function createNightSky(scene, q = {}) {
 
   const basis = new THREE.Matrix4();
   const vx = new THREE.Vector3(), vy = new THREE.Vector3(), vz = new THREE.Vector3();
+  const vLen = new THREE.Vector3();
   const pos = new THREE.Vector3(), toCam = new THREE.Vector3();
 
   return {
@@ -665,17 +666,30 @@ export function createNightSky(scene, q = {}) {
           continue;
         }
         pos.copy(it.from).addScaledVector(it.dir, it.travel * p);
-        toCam.copy(camera.position).sub(pos).normalize();
+        /* a streak can pass straight through the camera: a zero-length
+           toCam, or a cross product of parallel vectors, normalizes into
+           NaN — and a NaN matrix makes some GPU drivers rasterize the
+           quad as a full-screen black smear (the intermittent black
+           screen while dragging the camera on certain PCs). Fall back to
+           a safe axis instead of ever letting NaN reach the GPU. */
+        toCam.copy(camera.position).sub(pos);
+        if (toCam.lengthSq() < 1e-8) toCam.set(0, 1, 0); else toCam.normalize();
         vx.copy(it.dir);
-        vy.crossVectors(toCam, vx).normalize();
+        vy.crossVectors(toCam, vx);
+        if (vy.lengthSq() < 1e-8) {
+          vy.set(-vx.z, 0, vx.x);
+          if (vy.lengthSq() < 1e-8) vy.set(0, 1, 0);
+        }
+        vy.normalize();
         vz.crossVectors(vx, vy).normalize();
         const w = it.len * 0.055;
-        basis.makeBasis(vx.clone().multiplyScalar(it.len), vy.multiplyScalar(w), vz);
+        basis.makeBasis(vLen.copy(vx).multiplyScalar(it.len), vy.multiplyScalar(w), vz);
         basis.setPosition(pos);
         it.mesh.matrix.copy(basis);
-        it.mesh.visible = true;
-        /* fade in fast, out slow */
+        /* fade in fast, out slow — and never hand the GPU a fully
+           transparent quad: it is rasterized all the same */
         it.mat.opacity = mix * Math.min(1, p * 9) * (1 - Math.pow(p, 2.2));
+        it.mesh.visible = it.mat.opacity > 0.004;
       }
     }
   };

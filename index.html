@@ -27,10 +27,7 @@
     <a href="#about">About</a>
   </div>
   <div class="nav-spacer"></div>
-  <button class="nav-cta" id="navFind" type="button">🔍 Find a company</button>
   <div class="hud-actions">
-    <button id="btnFind" class="icon-btn" title="Find a company" aria-label="Find a company"
-            aria-expanded="false" aria-controls="finder">🔍</button>
     <button id="btnNight" class="icon-btn" title="Toggle day / night" aria-label="Toggle day or night">☀️</button>
     <button id="btnSound" class="icon-btn" type="button" title="Ambient sound" aria-label="Ambient sound"
             aria-pressed="false">🔇</button>
@@ -201,20 +198,19 @@ if (location.protocol === 'file:') {
   var sc = document.getElementById('scene');
   if (sc) sc.addEventListener('pointerdown', go, { once: true });
   /* reaching for the zoom, or starting to scroll, is reaching for the map too */
-  ['btnZoomIn', 'btnZoomOut', 'btnHome', 'btnFind'].forEach(function (id) {
+  ['btnZoomIn', 'btnZoomOut', 'btnHome'].forEach(function (id) {
     var b = document.getElementById(id);
     if (b) b.addEventListener('click', go, { once: true });
   });
   addEventListener('scroll', function once() {
     if (scrollY > 30) { go(); removeEventListener('scroll', once); }
   }, { passive: true });
-  /* the navbar CTA and the hero CTA both open the finder */
-  var wire = function (id) {
-    var b = document.getElementById(id), t = document.getElementById('btnFind');
-    if (b && t) b.addEventListener('click', function () { t.click(); });
-  };
-  wire('navFind');
-  wire('ctaExplore');
+  /* the hero CTA opens the finder (city.js listens for the event) */
+  var cta = document.getElementById('ctaExplore');
+  if (cta) cta.addEventListener('click', function () {
+    go();
+    dispatchEvent(new Event('binomar:finder'));
+  });
 })();
 </script>
 
