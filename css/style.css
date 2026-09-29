@@ -382,7 +382,10 @@ header.hero::after{content:"";position:absolute;inset:auto 0 0 0;height:90px;z-i
 .hero-overlay.faded{opacity:0;visibility:hidden;transition:opacity .9s ease,visibility .9s}
 .hero-kicker{font-size:11px;font-weight:800;letter-spacing:.34em;color:#c3d8f2;text-shadow:0 2px 14px rgba(3,10,24,.85)}
 .hero-head{font-family:var(--font-display);font-size:clamp(46px,8.4vw,92px);font-weight:600;line-height:.98;letter-spacing:-.005em;margin:18px 0 14px;text-shadow:0 10px 40px rgba(3,10,24,.65)}
-.hero-head .grad{font-style:italic;font-weight:500;padding-right:.08em;background:linear-gradient(90deg,var(--ember-soft),var(--ember),var(--ember-deep));-webkit-background-clip:text;background-clip:text;color:transparent}
+/* the brand name keeps one gradient and a slow sheen sliding through it
+   (the wrap carries the word-in rise, so the two animations never fight) */
+.hero-head .grad{font-style:italic;font-weight:500;padding-right:.08em;background:linear-gradient(90deg,var(--ember-soft),var(--ember),var(--ember-deep));background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:grad-sheen 7s ease-in-out infinite}
+@keyframes grad-sheen{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
 .hero-sub{max-width:560px;color:#e2ecfb;font-size:15.5px;line-height:1.65;text-shadow:0 2px 12px rgba(3,10,24,.85)}
 .hero-cta{display:flex;gap:12px;margin-top:26px;flex-wrap:wrap;justify-content:center}
 .hero-cta .btn{margin:0;pointer-events:auto}
@@ -469,7 +472,7 @@ footer.site-footer nav a:hover{color:var(--accent)}
 
 /* ---------- reduced motion ---------- */
 @media (prefers-reduced-motion: reduce){
-  .loader-mark,.loader-bar i,.scroll-cue,.loader-shine,.hero-grain{animation:none}
+  .loader-mark,.loader-bar i,.scroll-cue,.loader-shine,.hero-grain,.hero-head .grad{animation:none}
   .company-app>*{animation:none}
   /* the sky pass steps aside entirely: no runway, no veil, no sheet */
   .hero-veil{display:none}

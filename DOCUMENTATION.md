@@ -361,6 +361,7 @@ window.__binomar.skipIntro()        # jump straight to the overview
 window.__binomar.skyTo(0.5)         # preview the sky pass at any point (0–1)
 window.__binomar.quality            # the tier and budgets this device got
 window.__binomar.ambience.state     # the sound engine and its layer levels
+window.__binomar.nightBed           # the recorded night loop (plays after the first touch)
 
 # Assets (dev tools — npm install once)
 npm run optimize-models             # assets/models-src → assets/models

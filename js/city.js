@@ -39,7 +39,7 @@ import {
   makeStall, makeInn, makeChapel, makeFarm, makeWatermill, makeViewpoint, makeWell
 } from './hamlet.js';
 import { detectQuality } from './quality.js';
-import { createAmbience } from './ambience.js';
+import { createAmbience, createNightBed } from './ambience.js';
 import { loadCompanies, getIndustryMeta, fillBadge } from './data.js';
 import {
   loadModels, bake, modelGroup, createFlora, hasFlora, updateModelWind
@@ -145,6 +145,7 @@ function writePref(k, v) {
   try { localStorage.setItem('binomar.' + k, v); } catch (e) { /* private mode */ }
 }
 let ambience = null;
+let nightBed = null;
 let sky = null, grass = null, traffic = null, leaves = null, windmill = null, weather = null;
 let fireflies = null, birds = null, fire = null, plazaMonument = null;
 let animals = null, villagers = null, astronomer = null, waterfall = null;
@@ -1201,7 +1202,10 @@ function buildUI() {
   night.addEventListener('click', toggleNight);
   document.getElementById('btnHome').addEventListener('click', flyHome);
 
-  /* ambient sound: off until asked for (see ambience.js) */
+  /* ambient sound: off until asked for (see ambience.js). The night bed is
+     separate — the recording from /audio is there from the first moment of
+     the district, softly, as soon as the visitor has touched anything */
+  nightBed = createNightBed('audio/audio.mp3', { nightMix: () => envMix });
   const soundBtn = document.getElementById('btnSound');
   if (soundBtn) {
     const show = (on) => {
@@ -1211,7 +1215,10 @@ function buildUI() {
     };
     ambience = createAmbience({ onChange: show });
     show(ambience.on);
-    soundBtn.addEventListener('click', () => ambience.toggle());
+    soundBtn.addEventListener('click', () => {
+      ambience.toggle();
+      nightBed.enabled = ambience.on;   // one button, one idea of "sound"
+    });
   }
   document.getElementById('btnFull').addEventListener('click', () => {
     if (document.fullscreenElement) document.exitFullscreen();
@@ -1909,16 +1916,16 @@ function endIntro() {
   spinUp = 0;                                // the lap eases in from here (see animate)
 }
 
-/* the headline's half of the opening: every word (and the kicker, the line
-   under it and the buttons) rises into place one after another, in CSS,
-   the moment the loader lifts. Prepared early so nothing flashes. */
+/* the headline's half of the opening: each word of the welcome (and the
+   buttons) rises into place one after another, in CSS, the moment the
+   loader lifts. Prepared early so nothing flashes. Elements may be absent
+   (the overlay says just the one line now) — cue skips them quietly. */
 function prepareHeadline() {
   const ov = document.getElementById('heroOverlay');
   const head = ov && ov.querySelector('.hero-head');
   if (!ov || !head || Q.reducedMotion) return;
   let d = 0.35;
-  const cue = (el, gap) => { el.classList.add('w'); el.style.setProperty('--d', d.toFixed(2) + 's'); d += gap; };
-  cue(ov.querySelector('.hero-kicker'), 0.2);
+  const cue = (el, gap) => { if (!el) return; el.classList.add('w'); el.style.setProperty('--d', d.toFixed(2) + 's'); d += gap; };
   for (const node of [...head.childNodes]) {
     if (node.nodeType === Node.TEXT_NODE) {
       const frag = document.createDocumentFragment();
@@ -1932,7 +1939,7 @@ function prepareHeadline() {
       }
       head.replaceChild(frag, node);
     } else if (node.nodeType === Node.ELEMENT_NODE) {
-      cue(node, 0.09);                         // "after dark" keeps one gradient
+      cue(node, 0.12);                         // the brand keeps one gradient
     }
   }
   d += 0.1;
@@ -2649,7 +2656,7 @@ async function main() {
   if (heroOut < 0.5) startIntro();
 
   window.__binomar = {                                           // handy from the console
-    scene, camera, renderer, controls, sky, THREE, quality: Q, ambience,
+    scene, camera, renderer, controls, sky, THREE, quality: Q, ambience, nightBed,
     focusCompany,
     setNight: (v) => { envTarget = v; envMix = v; applyEnv(v); },
     skipIntro: () => { endIntro(); camTween = null; flight = null; controls.enabled = true; },
