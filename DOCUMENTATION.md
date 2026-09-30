@@ -341,6 +341,30 @@ navy, gold accents, luminous branding.
 7. The tower GLB carries emissive materials + `KHR_lights_punctual` — glow
    renders in any glTF viewer, but *bloom* depends on the client renderer
    (model-viewer shows plain emissive; three.js could add UnrealBloomPass).
+11. **The contact postcard sends through our own mailer** — `mailer/server.mjs`,
+    a Node sidecar in the compose stack, reached through nginx at `/api/postcard`
+    (`js/contact.js`): name, reply address, message and an optional paperclip
+    attachment (≤ 5 MB) are relayed over Gmail SMTP straight to
+    `binomargroup0@gmail.com`, with the visitor's address as Reply-To and a
+    `mailto:` draft as the fallback. **Setup:** create a Google *App Password*
+    (2-Step Verification → App passwords) for the account and set
+    `SMTP_USER`/`SMTP_PASS` in the Dokploy environment; without `SMTP_PASS`
+    the site still deploys, but the postcard refuses to send and the front-end
+    falls back to the `mailto:` draft. The mailer rate-limits abuse (5 per IP
+    per hour, 100 per day) and silently discards submissions that fill the
+    hidden `_honey` field. Attachments only travel on the direct path, never
+    on the mailto: fallback. Local test: `npm run dev` (site + mailer in
+    one terminal; real Gmail once `mailer/.env` carries `SMTP_PASS`,
+    otherwise an Ethereal test account that prints preview URLs).
+12. **Back from a company site must not come back frozen.** The dive ends in a
+    same-tab `location.href` with the fade overlay at full opacity and the
+    camera inside a building — a back/forward-cache restore (Back button,
+    common on Chrome/Safari) would otherwise revive the page exactly there:
+    black screen, controls disabled. `pageshow` (persisted) in `city.js`
+    lifts the veil, resets the lens and glides home to the fixed overview;
+    the synth ambience gets a `resume()` and the restore is recorded in the
+    black box (`bfrestore`, shown with `?debug=1`). A full reload — the other
+    way Back can land — was already safe.
 
 ---
 
@@ -349,6 +373,7 @@ navy, gold accents, luminous branding.
 ```bash
 # Local dev
 node server.mjs                     # → http://localhost:8080
+npm run dev                         # site + postcard mailer, one terminal
 
 # Local docker test of the production image
 docker build -t binomar-site . && docker run -p 8080:80 binomar-site

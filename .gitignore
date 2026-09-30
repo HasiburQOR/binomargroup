@@ -10,3 +10,6 @@ server-*.log
 binomargroup/
 
 node_modules/
+
+# real Gmail App Password for local postcard testing — never commit
+mailer/.env

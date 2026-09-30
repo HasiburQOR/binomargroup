@@ -6,6 +6,7 @@
   "description": "Binomar Group — interactive 3D company district (Three.js, no build step, Sanity-ready)",
   "scripts": {
     "start": "node server.mjs",
+    "dev": "node dev.mjs",
     "optimize-models": "node tools/optimize-models.mjs",
     "brand-assets": "node tools/brand-assets.mjs"
   },

@@ -22,6 +22,23 @@ services:
       - "traefik.http.routers.binomar-site.tls.certresolver=letsencrypt"
       - "traefik.http.services.binomar-site.loadbalancer.server.port=80"
 
+  # The contact postcard mailer: POST /api/postcard → Gmail SMTP.
+  # Internal only — nginx proxies /api/ here; no Traefik labels, no
+  # published port. Set SMTP_PASS in the Dokploy environment (a Gmail
+  # App Password, see mailer/server.mjs); without it the mailer starts
+  # but refuses to send, and the site falls back to a mailto: draft.
+  mailer:
+    build: ./mailer
+    image: binomar-mailer
+    container_name: binomar-mailer
+    restart: unless-stopped
+    environment:
+      SMTP_USER: ${SMTP_USER:-binomargroup0@gmail.com}
+      SMTP_PASS: ${SMTP_PASS:-}
+      ALLOW_ORIGINS: ${ALLOW_ORIGINS:-https://binomargroup.com,http://localhost:8080}
+    networks:
+      - dokploy-network
+
 networks:
   dokploy-network:
     external: true

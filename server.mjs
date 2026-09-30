@@ -30,6 +30,30 @@ const MIME = {
 createServer(async (req, res) => {
   try {
     let p = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+
+    /* dev only: proxy /api/* to the mailer sidecar (mailer/server.mjs)
+       so the contact postcard works end-to-end on localhost */
+    if (p.startsWith('/api/')) {
+      const chunks = [];
+      for await (const c of req) chunks.push(c);
+      try {
+        const r = await fetch('http://localhost:8081' + req.url, {
+          method: req.method,
+          headers: { 'content-type': req.headers['content-type'] || '' },
+          body: (req.method === 'GET' || req.method === 'HEAD') ? undefined : Buffer.concat(chunks)
+        });
+        res.writeHead(r.status, {
+          'Content-Type': r.headers.get('content-type') || 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store'
+        });
+        res.end(Buffer.from(await r.arrayBuffer()));
+      } catch (e) {
+        res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ ok: false, error: 'The mailer is not running. Start it with:  cd mailer && node server.mjs' }));
+      }
+      return;
+    }
+
     if (p === '/' || p.endsWith('/')) p += 'index.html';
     const file = normalize(join(root, p));
     if (!file.startsWith(root)) { res.writeHead(403); res.end('Forbidden'); return; }

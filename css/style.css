@@ -602,6 +602,24 @@ main .band .reveal{transition:opacity .7s cubic-bezier(.2,.7,.2,1) calc(var(--i,
 .pc-note{color:var(--muted);font-size:11.5px;line-height:1.5;max-width:260px}
 .pc-note.bad{color:#ffb4a8}
 
+/* the paperclip: attach a photo or document to the postcard. The chip
+   wears the chosen filename until it is removed or the card is sent. */
+.pc-attach-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:2px}
+.pc-clip{display:inline-flex;align-items:center;gap:7px;cursor:pointer;padding:8px 14px;border-radius:99px;
+  font:800 10px/1 var(--font);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+  background:transparent;border:1px dashed rgba(var(--ember-rgb),.45);transition:color .2s,border-color .2s,background .2s}
+.pc-clip:hover{color:var(--accent);border-color:var(--accent);background:rgba(var(--ember-rgb),.07)}
+.pc-clip .clip-ico{font-size:13px;line-height:1}
+.pc-file{display:inline-flex;align-items:center;gap:4px;max-width:100%;min-width:0;padding:4px 5px 4px 12px;border-radius:99px;
+  background:rgba(var(--ember-rgb),.1);border:1px solid rgba(var(--ember-rgb),.35)}
+.pc-file-name{font-size:11.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:230px}
+.pc-file-x{border:0;cursor:pointer;background:transparent;color:var(--muted);font-size:15px;line-height:1;padding:3px 8px;border-radius:99px;transition:color .2s}
+.pc-file-x:hover{color:#ffb4a8}
+.pc-send.sending{opacity:.65;pointer-events:none}
+/* the honeypot: off-screen so people never see it; bots fill it and
+   FormSubmit quietly drops those submissions */
+.pc-honey{position:absolute;left:-6000px;top:-6000px;height:1px;width:1px;opacity:0}
+
 /* the address side */
 .pc-address{position:relative;display:flex;flex-direction:column;min-width:0}
 .pc-corner{position:relative;height:118px;margin-bottom:10px}

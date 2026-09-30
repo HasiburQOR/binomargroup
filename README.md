@@ -36,6 +36,7 @@ optional **Sanity CMS** backend and free hosting on
 | Method                       | How                                                                                                |
 | ---------------------------- | -------------------------------------------------------------------------------------------------- |
 | One command (Node installed) | `node server.mjs` in this folder → open http://localhost:8080 (add a port: `node server.mjs 3000`) |
+| Site + contact form          | `npm run dev` → http://localhost:8080 with the postcard mailer too (real Gmail once `mailer/.env` has `SMTP_PASS`, else a test account) |
 | VS Code                      | Install the **Live Server** extension → right-click `index.html` → *Open with Live Server*         |
 | Any other static server      | `npx -y http-server`, `python -m http.server`, … all work too                                      |
 
@@ -74,6 +75,7 @@ binomar-3d-website/
 ├── blender/              ← binomar-buildings.blend: source of the hq-*.glb headquarters
 ├── data/companies.js     ← local company data (your mini-database)
 ├── sanity/schema.js      ← Sanity CMS schema + setup instructions
+├── mailer/               ← contact-postcard mailer (Node + nodemailer → Gmail SMTP)
 └── package.json
 ```
 
@@ -112,6 +114,13 @@ Key fields:
      `www`, one `A`/`CNAME` for the root). Takes ~5 minutes to go live.
 
 (Netlify / Vercel / GitHub Pages work identically — any static host.)
+
+> 📮 **Contact postcard:** the mailer (`mailer/`) is a Docker sidecar — on
+> Dokploy set `SMTP_PASS` (a Gmail App Password) in the environment, see
+> `DOCUMENTATION.md` §11. Purely static hosts can't run it; there the
+> form falls back to a `mailto:` draft. Locally: `npm run dev` runs site +
+> mailer together and sends real mail once `mailer/.env` carries
+> `SMTP_PASS=<app password>`.
 
 ## 🔧 How the scene is put together
 
@@ -278,7 +287,10 @@ Key fields:
   the fixed overview — the same angle for everyone, close enough that the
   buildings around the plaza fill the first frame. The world is already
   turning in a slow orbit (one lap ≈ two minutes) so every name plate stays
-  in view, and time of day is remembered between visits.
+  in view, and time of day is remembered between visits. A Back button
+   returning through the browser's back/forward cache — which would
+   otherwise thaw the page frozen mid-dive behind the fade — is caught on
+   `pageshow` and lands on the same glide home.
 - **The dive.** Clicking a building hands off to a camera flight that eases on
   `p²·¹` — barely moving at first, then rushing — with a late narrowing of the
   field of view that reads as speed far more than translation alone, and a fade

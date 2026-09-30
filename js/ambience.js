@@ -188,6 +188,12 @@ export function createAmbience({ onChange } = {}) {
     get state() { return { engine: ctx ? ctx.state : 'not started', ...want }; },
     toggle() { set(!on); },
 
+    /* after a back/forward-cache restore the engine can come back
+       suspended, and no visibilitychange ever fires to wake it */
+    resume() {
+      if (ctx && on && awake && ctx.state === 'suspended') ctx.resume().catch(() => {});
+    },
+
     /* once a frame from the render loop. s: { night 0..1, near 0..1 (how
        close the camera is to the plaza), sky 0..1 (sky pass), visible,
        under (the page is over the map) } */

@@ -166,11 +166,14 @@ if (location.protocol === 'file:') {
     </div>
   </section>
 
-  <!-- contact: a postcard from the summit. The message side composes an
-       email in the visitor's own mail app (no server, nothing stored); the
-       address side carries the real email, phone and head-office address
-       (which opens in Google Maps), each with a copy button. Motion and
-       copy behaviour live in js/contact.js. -->
+  <!-- contact: a postcard from the summit. The message side posts the
+       postcard to our own mailer (/api/postcard — the Node sidecar in
+       ./mailer, relayed over Gmail SMTP): name, reply address, message
+       and an optional paperclip attachment land directly in the group
+       inbox; a mailto: draft is the fallback if that service is
+       unreachable. The address side carries the real email, phone and
+       head-office address (which opens in Google Maps), each with a copy
+       button. Motion, send and copy behaviour live in js/contact.js. -->
   <section class="band contact" id="contact">
     <div class="band-inner">
       <h2 class="sec-title">Send us a postcard</h2>
@@ -192,9 +195,21 @@ if (location.protocol === 'file:') {
               <span>Your message</span>
               <textarea name="message" rows="4" required maxlength="2000" placeholder="Tell us where you would like to go…"></textarea>
             </label>
+            <div class="pc-attach-row">
+              <input class="pc-honey" type="text" name="_honey" tabindex="-1" autocomplete="off" aria-hidden="true" />
+              <input type="file" id="postcardFile" name="attachment" hidden
+                     accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip" />
+              <button class="pc-clip" type="button" id="postcardClip">
+                <span class="clip-ico" aria-hidden="true">📎</span> Attach a file
+              </button>
+              <span class="pc-file" id="postcardFileName" hidden>
+                <span class="pc-file-name" id="postcardFileNameText"></span>
+                <button class="pc-file-x" type="button" id="postcardFileX" aria-label="Remove the attachment">×</button>
+              </span>
+            </div>
             <div class="pc-send-row">
-              <button class="btn pc-send" type="submit">Send the postcard <span aria-hidden="true">✉</span></button>
-              <small class="pc-note" id="postcardNote" aria-live="polite">Opens your email app with the postcard written out.</small>
+              <button class="btn pc-send" type="submit" id="postcardSend"><span class="pc-send-label">Send the postcard</span> <span aria-hidden="true">✉</span></button>
+              <small class="pc-note" id="postcardNote" aria-live="polite">Goes straight to the Binomar inbox — no email app needed.</small>
             </div>
           </form>
 

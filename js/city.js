@@ -1994,6 +1994,28 @@ function flyHome() {
   controls.enabled = false;
 }
 
+/* ---------------- coming back from another page ----------------
+   The dive hands the tab over to a company site with the fade at full
+   opacity and the camera inside a building. Browsers often bring the
+   district back from the back/forward cache on Back — frozen exactly
+   there: a dark screen, dead controls, nowhere to click. A bfcache
+   restore is caught here, the dive is undone, and the camera glides
+   home to the same fixed overview a fresh visit opens on. (A full
+   reload — the other way Back can land — already does this in main().) */
+addEventListener('pageshow', (ev) => {
+  if (!ev.persisted || !camera || !controls) return;   // ordinary load: main() owns it
+  blackboxLog('bfrestore', 'restored from the back/forward cache');
+  flight = null; zoomTween = null; intro = null;
+  if (flyFade) flyFade.style.opacity = 0;              // lift the dive's dark veil
+  camera.fov = 45;                                     // undo the dive's lens punch (the constructor lens)
+  camera.updateProjectionMatrix();
+  setHovered(null);
+  tooltip.classList.remove('show', 'pinned');
+  flyHome();                                           // glide to the overview; controls return on landing
+  controls.autoRotateSpeed = AUTO_SPIN;
+  if (ambience && ambience.resume) ambience.resume();  // the synth's engine can come back suspended
+});
+
 let lastW = 0, lastH = 0;
 function onResize() {
   const w = wrapEl.clientWidth || 1, h = wrapEl.clientHeight || 1;
