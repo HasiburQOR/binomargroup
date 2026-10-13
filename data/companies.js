@@ -32,10 +32,10 @@ window.LOCAL_COMPANIES = [
     plot: 1,
     featured: true,
     address: "52 Ketevan Dedofali Ave, Tbilisi 0101, Georgia",
-    phone: "+995 511 333 699",
-    email: "traveldoor@binomargroup.com",
+    phone: "+995 322 35 35 99",
+    email: "office@traveldoor.ge",
     website: "https://traveldoor.ge/",
-    founded: "2012"
+    founded: "2017"
   },
   {
     id: "maq-tourism",
@@ -56,10 +56,10 @@ window.LOCAL_COMPANIES = [
     plot: 2,
     featured: true,
     address: "Ketevan Dedopali Avenue 52, Tbilisi, Georgia",
-    phone: "+595 244 144",
+    phone: "+995595244144",
     email: "info@maqtourism.com",
     website: "https://maqtourism.com/",
-    founded: "2016"
+    founded: "2021"
   },
   {
     id: "hashtag-georgia",
@@ -78,11 +78,11 @@ window.LOCAL_COMPANIES = [
     floors: 6,
     plot: 3,
     featured: true,
-    address: "Georgia House, Vine Street, Binomar District",
-    phone: "+995 (555) 010-0303",
-    email: "georgia@binomargroup.com",
+    address: "ATD Representations, 303, B- Wing, Raylon Arcade, RK Mandir road, Kondivita, Andheri East ( Landmark Near Pedelite),Mumbai - 400093",
+    phone: "+919136610123",
+    email: "info@hgeorgia.com",
     website: "https://hgeorgia.com/",
-    founded: "2018"
+    founded: "2023"
   },
   {
     id: "traveldoor-outbound",
@@ -106,6 +106,6 @@ window.LOCAL_COMPANIES = [
     whatsapp: "+995 598 90 33 01",
     email: "info@traveldoor.ge",
     website: "https://www.facebook.com/outboundtraveldoor",
-    founded: "2020"
+    founded: "2022"
   }
 ];
