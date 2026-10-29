@@ -6,6 +6,9 @@
    tower, MAQ Tourism's terraces, Hashtag Georgia's twin towers and
    Traveldoor Outbound's control tower. Their Brand* materials take
    the company colour and their lit glass glows after dark.
+   Two trades have a building of their own built in code instead:
+   Surfing Online's fibre tower and mast (isp) and Buying House's
+   sawtooth garment mill with its gold-finned tower (sourcing).
 
    Fallback, if those files are missing: two downloaded models (a
    brick apartment block and a concrete brutalist office) become four
@@ -315,6 +318,52 @@ function penthouse(ctx, r) {
   box(ctx, w + 1.3, 0.08, d + 1.1, brandLight(ctx), r.cx, r.y + 2.22, r.cz);
 }
 
+/* an upright cylinder standing on y */
+function drum(ctx, rTop, rBot, h, mat, x, y, z, seg = 24) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, h, seg), mat);
+  m.position.set(x, y + h / 2, z);
+  m.castShadow = m.receiveShadow = true;
+  ctx.detail.add(m);
+  return m;
+}
+
+/* a thin rod from a to b — the members of a lattice mast */
+function strut(ctx, a, b, r, mat) {
+  const dir = new THREE.Vector3().subVectors(b, a);
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, dir.length(), 5), mat);
+  m.position.copy(a).addScaledVector(dir, 0.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+  m.castShadow = true;
+  ctx.detail.add(m);
+}
+
+/* a microwave dish on a short arm, looking out along `yaw` */
+function dish(ctx, x, z, y, yaw, r, mat) {
+  const d = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.25, r * 0.45, 18, 1, true), mat);   // mat is double-sided
+  d.rotation.set(Math.PI / 2, 0, 0);
+  const g = new THREE.Group();
+  g.add(d);
+  g.rotation.y = yaw;
+  g.position.set(x, y, z);
+  g.updateMatrixWorld(true);
+  d.applyMatrix4(g.matrix);
+  d.castShadow = true;
+  ctx.detail.add(d);
+}
+
+/* a garment-mill sawtooth bay: a sloped roof rising to a glazed north light,
+   running the full depth of the hall */
+function sawtooth(ctx, x0, bw, h, depth, y, roofMat) {
+  const s = new THREE.Shape();
+  s.moveTo(0, 0); s.lineTo(bw, 0); s.lineTo(bw, h); s.lineTo(0, 0);
+  const geo = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: false });
+  const m = new THREE.Mesh(geo, roofMat);
+  m.position.set(x0, y, -depth / 2);
+  m.castShadow = m.receiveShadow = true;
+  ctx.detail.add(m);
+  box(ctx, 0.06, h * 0.8, depth - 0.5, litGlass(ctx), x0 + bw + 0.03, y + h * 0.05, 0);
+}
+
 /* ---------- the four designs --------------------------------------------
    Each returns { roof: {x, z, y} } — where the name sign stands. */
 const DESIGNS = {
@@ -376,6 +425,140 @@ const DESIGNS = {
     return { roof: high ? { x: high.cx, z: high.cz + high.d * 0.1, y: high.y } : { x: 0, z: 0, y: body.h } };
   },
 
+  /* the internet provider: a faceted navy-glass fibre tower banded with lit
+     cyan rings on a white podium, dishes round its crown, a red-and-white
+     lattice mast on the podium beside it and the wifi waves on its front */
+  fiber(ctx) {
+    const S = ctx.side;
+    const navy = std('#182538', { roughness: 0.4, metalness: 0.5 });
+    const white = std('#eef3f6', { roughness: 0.55 });
+    const red = std('#d6453d', { roughness: 0.5 });
+    const dishMat = std('#f4f6f8', { roughness: 0.4, side: THREE.DoubleSide });
+    const glass = std('#1f3b57', {
+      roughness: 0.12, metalness: 0.6, emissive: new THREE.Color('#9fe6ff'), emissiveIntensity: 0.05
+    });
+    ctx.windows.push(glass);
+    const ring = brandLight(ctx);
+
+    /* the podium: a glass ground floor under a white slab with a lit band */
+    const PW = S, PD = S * 0.8, PH = 3.0;
+    box(ctx, PW - 0.5, PH - 0.8, PD - 0.5, glass, 0, 0, 0);
+    box(ctx, PW, 0.8, PD, white, 0, PH - 0.8, 0);
+    box(ctx, PW + 0.04, 0.16, PD + 0.04, ring, 0, PH - 0.5, 0);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(ctx, 0.3, PH - 0.8, 0.3, white, sx * (PW / 2 - 0.4), 0, sz * (PD / 2 - 0.4));
+
+    /* the tower, one glass drum per floor, a cyan ring every third */
+    const R = S * 0.29, tx = -S * 0.13, tz = -S * 0.04;
+    const n = Math.max(6, ctx.company.floors), fh = 1.45;
+    for (let i = 0; i < n; i++) {
+      const y = PH + i * fh;
+      drum(ctx, R, R, fh - 0.14, glass, tx, y, tz, 12);
+      drum(ctx, R + 0.14, R + 0.14, 0.14, i % 3 === 2 ? ring : navy, tx, y + fh - 0.14, tz, 12);
+    }
+    const top = PH + n * fh;
+    drum(ctx, R + 0.2, R + 0.2, 0.3, white, tx, top, tz, 12);
+    drum(ctx, R * 0.72, R * 0.72, 1.1, navy, tx, top + 0.3, tz, 12);
+    const roofY = top + 1.4;
+    drum(ctx, R * 0.78, R * 0.78, 0.18, ring, tx, roofY - 0.18, tz, 12);
+    /* three dishes on the crown's rim, looking out over the valley */
+    for (const a of [-2.4, -1.4, 2.6]) {
+      dish(ctx, tx + Math.sin(a) * (R - 0.1), tz + Math.cos(a) * (R - 0.1), top + 0.95, a, 0.55, dishMat);
+    }
+
+    /* the mast, tapering from the podium roof, red at the top */
+    const mx = S * 0.32, mz = S * 0.18, mh = top + 1.6 - PH;
+    const leg = (sx, sz, t) => new THREE.Vector3(mx + sx * (0.7 - 0.5 * t), PH + t * mh, mz + sz * (0.7 - 0.5 * t));
+    const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+    for (const [sx, sz] of corners) {
+      strut(ctx, leg(sx, sz, 0), leg(sx, sz, 0.8), 0.07, white);
+      strut(ctx, leg(sx, sz, 0.8), leg(sx, sz, 1), 0.07, red);
+    }
+    const bays = 7;
+    for (let k = 0; k < bays; k++) {
+      const t0 = k / bays, t1 = (k + 1) / bays, mat = t1 > 0.8 ? red : white;
+      for (let c = 0; c < 4; c++) {
+        const [ax, az] = corners[c], [bx, bz] = corners[(c + 1) % 4];
+        strut(ctx, leg(ax, az, t0), leg(bx, bz, t1), 0.04, mat);
+        strut(ctx, leg(ax, az, t1), leg(bx, bz, t1), 0.04, mat);
+      }
+    }
+    /* sector antennas and a link dish near the top */
+    for (const [sx, sz] of [[1, 0], [-1, 0], [0, 1]]) {
+      box(ctx, sz ? 0.5 : 0.12, 1.3, sz ? 0.12 : 0.5, white, mx + sx * 0.42, PH + mh * 0.82, mz + sz * 0.42);
+    }
+    dish(ctx, mx, mz + 0.45, PH + mh * 0.62, 0, 0.45, dishMat);
+    spire(ctx, mx, mz, PH + mh, 0.5);
+
+    /* the wifi waves, lit on the podium's front */
+    const wx = S * 0.18, wz = PD / 2 + 0.08;
+    for (const r of [0.55, 1.0, 1.45]) {
+      const arc = new THREE.Mesh(new THREE.TorusGeometry(r, 0.11, 6, 20, Math.PI / 2), ring);
+      arc.rotation.z = Math.PI / 4;
+      arc.position.set(wx, 0.35, wz);
+      ctx.detail.add(arc);
+    }
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), ring);
+    dot.position.set(wx, 0.35, wz);
+    ctx.detail.add(dot);
+
+    return { roof: { x: tx, z: tz, y: roofY } };
+  },
+
+  /* the apparel buying house: an ivory garment-mill hall under a sawtooth
+     roof, bolts of cloth hung down its front, and a navy office tower with
+     gold fins — the threads — at one end */
+  atelier(ctx) {
+    const W = ctx.side, D = ctx.side * 0.74;
+    const ivory = std('#ece3d0', { roughness: 0.8 });
+    const navy = std('#0c1a33', { roughness: 0.45, metalness: 0.4 });
+    const roofMat = std('#28364f', { roughness: 0.6, metalness: 0.3, side: THREE.DoubleSide });
+    const gold = std('#d4a62a', { roughness: 0.3, metalness: 0.75 });
+    const glass = std('#0d2452', {
+      roughness: 0.45, metalness: 0, envMapIntensity: 0.4, emissive: new THREE.Color('#9fbcf0'), emissiveIntensity: 0.05
+    });
+    ctx.windows.push(glass);
+
+    /* the hall */
+    const hx0 = -W / 2, hx1 = W * 0.17, hw = hx1 - hx0, hcx = (hx0 + hx1) / 2, HH = 3.4;
+    box(ctx, hw, 0.45, D, navy, hcx, 0, 0);
+    box(ctx, hw - 0.1, HH - 0.45, D - 0.1, ivory, hcx, 0.45, 0);
+    box(ctx, hw - 1.2, 1.1, 0.06, glass, hcx, 1.5, -D / 2 + 0.01);       // the back: a long window band
+    box(ctx, 0.06, 1.1, D - 1.2, glass, hx0 - 0.01, 1.5, 0);
+    box(ctx, hw + 0.2, 0.22, D + 0.2, gold, hcx, HH, 0);                  // gold cornice
+    const bays = 4, bw = hw / bays;
+    for (let i = 0; i < bays; i++) sawtooth(ctx, hx0 + i * bw, bw, 1.7, D, HH + 0.22, roofMat);
+
+    /* cloth hung down the front — denim, cream, madder, gold, olive */
+    const cloth = ['#2f4b7c', '#f3e9d2', '#b5523b', '#d4a62a', '#6b7a3a'].map((c) => std(c, { roughness: 0.95 }));
+    const bn = 5, gap = (hw - 1.6) / bn;
+    box(ctx, hw - 1.0, 0.1, 0.1, gold, hcx, HH - 0.55, D / 2 + 0.12);   // the hanging rail
+    for (let i = 0; i < bn; i++) {
+      box(ctx, gap * 0.62, 2.2 + (i % 2) * 0.35, 0.05, cloth[i], hx0 + 0.8 + (i + 0.5) * gap, HH - 0.6 - 2.2 - (i % 2) * 0.35, D / 2 + 0.1);
+    }
+
+    /* the tower, its fins on the front and the open side */
+    const tw = W / 2 - hx1 + 0.4, td = D * 0.82, tcx = (hx1 - 0.4 + W / 2) / 2, tz = -D * 0.06;
+    const n = Math.max(5, ctx.company.floors), TH = 1.0 + n * 1.7;
+    box(ctx, tw, TH, td, glass, tcx, 0, tz);
+    for (let i = 0; i <= n; i++) box(ctx, tw + 0.12, 0.14, td + 0.12, navy, tcx, 0.9 + i * 1.7 - 0.07, tz);
+    const fins = Math.max(3, Math.round(tw / 1.1));
+    for (let i = 0; i <= fins; i++) {
+      box(ctx, 0.12, TH - 0.4, 0.26, gold, tcx - tw / 2 + (i / fins) * tw, 0.4, tz + td / 2 + 0.13);
+    }
+    const sideFins = Math.max(3, Math.round(td / 1.1));
+    for (let i = 0; i <= sideFins; i++) {
+      box(ctx, 0.26, TH - 0.4, 0.12, gold, tcx + tw / 2 + 0.13, 0.4, tz - td / 2 + (i / sideFins) * td);
+    }
+    box(ctx, tw + 0.9, 0.5, td + 0.9, navy, tcx, TH, tz);
+    box(ctx, tw + 0.94, 0.14, td + 0.94, brandLight(ctx), tcx, TH + 0.2, tz);
+
+    /* a gold canopy over the hall's front door */
+    box(ctx, 2.6, 0.16, 1.4, gold, hcx + hw * 0.32, 2.4, D / 2 + 0.7);
+    for (const sx of [-1, 1]) box(ctx, 0.1, 2.4, 0.1, navy, hcx + hw * 0.32 + sx * 1.2, 0, D / 2 + 1.3);
+
+    return { roof: { x: tcx, z: tz, y: TH + 0.5 } };
+  },
+
   /* a headquarters modelled for the site in Blender, fitted to the plot's
      terrain pad; the name sign stands on its highest roof */
   hq(ctx) {
@@ -403,6 +586,9 @@ const HQ_BY_ID = {
   'hashtag-georgia': 'hq-georgia', 'traveldoor-outbound': 'hq-outbound'
 };
 const HQ_KEYS = ['hq-traveldoor', 'hq-maq', 'hq-georgia', 'hq-outbound'];
+/* trades with a building of their own, built here rather than modelled:
+   the internet provider's fibre tower and the buying house's mill */
+const DESIGN_BY_INDUSTRY = { isp: 'fiber', sourcing: 'atelier' };
 /* each headquarters' own body colours, so no two read alike at a distance:
    Traveldoor keeps the deep-blue glass of the file; Outbound's control
    tower becomes bronze glass in white aluminium, so the two travel brands
@@ -451,10 +637,13 @@ export function makeModelBuilding(company, kind) {
   const plot = Number(company.plot);
   const pick = Number.isFinite(plot) && plot > 0 ? plot - 1 : hash;
 
-  /* a Blender headquarters first; the repainted downloaded models if not */
+  /* a design built for the company's trade first, then a Blender
+     headquarters, then the repainted downloaded models */
   const hq = HQ_BY_ID[company.id] || HQ_KEYS[pick % HQ_KEYS.length];
   let design;
-  if (hasModel(hq)) {
+  if (DESIGN_BY_INDUSTRY[company.industry]) {
+    design = DESIGN_BY_INDUSTRY[company.industry];
+  } else if (hasModel(hq)) {
     design = 'hq';
   } else {
     const family = TOWER_KINDS.has(kind) ? 'apartment' : 'brutalist';
@@ -467,6 +656,8 @@ export function makeModelBuilding(company, kind) {
     rand: mulberry32(hash ^ 0x9e3779b9), group: new THREE.Group(), detail: new THREE.Group(),
     windows: [], blink: [], paintCache: new Map(), warm: false, hq
   };
+  /* the square the headquarters are fitted to, inside the terrain pad */
+  ctx.side = (Math.max(ctx.dims.w, ctx.dims.d) * 0.62 + 3.2 - 0.6) * 1.35;
   const { roof } = DESIGNS[design](ctx);
   compactGroup(ctx.detail);
   ctx.group.add(ctx.detail);

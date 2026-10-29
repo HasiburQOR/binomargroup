@@ -183,14 +183,17 @@ export function makeBaseTerrain() {
   };
 }
 
-/* flatten circular pads (summit plaza + building plots) into the heightfield */
+/* flatten circular pads (summit plaza + building plots) into the heightfield.
+   A pad with `flat` (a share of its radius) is held dead level that far out
+   and banked back into the slope beyond — a terrace cut into the hillside */
 export function withPads(base, pads) {
   return function (x, z) {
     let h = base(x, z);
     for (const p of pads) {
       const dd = Math.hypot(x - p.x, z - p.z);
       if (dd < p.r) {
-        const k = dd / p.r, blend = k * k * (3 - 2 * k);               // smoothstep
+        const f = p.flat || 0;
+        const k = Math.max(0, (dd / p.r - f) / (1 - f)), blend = k * k * (3 - 2 * k);   // smoothstep
         h = p.y + (h - p.y) * blend;
       }
     }
@@ -687,14 +690,15 @@ export function makeRoadRibbon(points, width, mat, H, opts = {}) {
 }
 
 /* ---------- mountain-top layout ----------------------------------------------
-   Featured companies ring the summit plaza; the rest step down the
-   mountainside beside the spiral road. Scales with company count. */
+   The first six companies ring the summit plaza round the Binomar tower;
+   any more step down the mountainside beside the spiral road. */
 export function computeMountainLayout(count) {
   const spots = [];
   /* the road climbs onto the plateau through the sector from about -0.9 to
      +1.1 rad (roadAt(-0.09 … 0.05) at r 17–32), so the summit plots share
-     the clear arc beyond it — a building on the carriageway otherwise */
-  const plateauN = Math.min(count, 4);
+     the clear arc beyond it — a building on the carriageway otherwise.
+     Six fit that arc 16 m apart, clear of each other's walls */
+  const plateauN = Math.min(count, 6);
   const A0 = 1.5, A1 = 5.0;
   for (let i = 0; i < plateauN; i++) {
     const a = plateauN === 1 ? (A0 + A1) / 2 : A0 + (i / (plateauN - 1)) * (A1 - A0);
@@ -1089,6 +1093,7 @@ const STYLES = {
 const DEFAULT_STYLE = {
   travel: 'modern-tower', tech: 'modern-office', outbound: 'modern-office',
   dmc: 'modern-office', tourism: 'modern-tower', textiles: 'modern-shop',
+  isp: 'modern-tower', sourcing: 'modern-shop',
   retail: 'modern-shop',
   realestate: 'modern-tower', hotel: 'modern-tower', finance: 'modern-tower',
   logistics: 'modern-shop', foods: 'modern-office', pharma: 'modern-office',

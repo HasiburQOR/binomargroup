@@ -54,6 +54,8 @@ export default {
           { title: 'Tourism & Experiences', value: 'tourism' },
           { title: 'Destination Management', value: 'dmc' },
           { title: 'Outbound Travel', value: 'outbound' },
+          { title: 'Internet Service', value: 'isp' },
+          { title: 'Apparel Sourcing', value: 'sourcing' },
           { title: 'Energy & Power', value: 'energy' },
           { title: 'Finance & Investment', value: 'finance' },
           { title: 'Construction', value: 'construction' }

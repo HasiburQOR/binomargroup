@@ -19,6 +19,8 @@ export const INDUSTRY_META = {
   tourism:     { label: "Tourism & Experiences",   color: "#14b8a6" },
   dmc:         { label: "Destination Management",  color: "#e11d48" },
   outbound:    { label: "Outbound Travel",         color: "#f97316" },
+  isp:         { label: "Internet Service",        color: "#14a3bf" },
+  sourcing:    { label: "Apparel Sourcing",        color: "#d4a62a" },
   energy:      { label: "Energy & Power",        color: "#eab308" },
   finance:     { label: "Finance & Investment",  color: "#64748b" },
   construction:{ label: "Construction",          color: "#d97706" }

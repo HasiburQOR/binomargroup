@@ -1,0 +1,24 @@
+# Local test run of the production images — no Dokploy, no Traefik.
+#   docker compose -f docker-compose.local.yml up -d --build
+# then open http://localhost:8090
+#
+# The same nginx image as production, published on port 8090, with the
+# mailer beside it on a plain local network. Without SMTP_PASS the mailer
+# refuses to send and the contact form falls back to a mailto: draft.
+
+services:
+  web:
+    build: .
+    image: binomar-site
+    container_name: binomar-site-local
+    ports:
+      - "8090:80"
+
+  mailer:
+    build: ./mailer
+    image: binomar-mailer
+    container_name: binomar-mailer-local
+    environment:
+      SMTP_USER: ${SMTP_USER:-binomargroup0@gmail.com}
+      SMTP_PASS: ${SMTP_PASS:-}
+      ALLOW_ORIGINS: http://localhost:8090

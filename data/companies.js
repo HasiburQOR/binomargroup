@@ -107,5 +107,41 @@ window.LOCAL_COMPANIES = [
     email: "info@traveldoor.ge",
     website: "https://www.facebook.com/outboundtraveldoor",
     founded: "2022"
+  },
+  {
+    id: "surfing-online",
+    name: "Surfing Online",
+    industry: "isp",
+    style: "modern-tower",
+    tagline: "Fastest fiber in town.",
+    description: [
+      "Surfing Online is the group's internet service provider in Bangladesh — fast fiber internet for homes and businesses, with round-the-clock support from a local team.",
+      "From home broadband to business internet, corporate leased lines and static IPs, Surfing Online keeps families streaming, offices working and networks running across Bangladesh."
+    ],
+    color: "#14a3bf",            // the site's cyan accent, on its navy (#182538)
+    logo: "assets/logos/surfing-online.webp",
+    logoMark: "assets/logos/surfing-online-mark.webp",
+    floors: 10,
+    plot: 5,
+    featured: false,
+    address: "Dhaka, Bangladesh",
+    email: "support@surfingonline.bd",
+    website: "https://surfingonline.binomargroup.com/"
+  },
+  {
+    id: "buying-house",
+    name: "Buying House",
+    industry: "sourcing",
+    style: "modern-shop",
+    tagline: "Your trusted global apparel sourcing partner.",
+    description: [
+      "Buying House is the group's apparel sourcing company — connecting brands with trusted manufacturers for T-shirts, denim, knitwear and woven garments.",
+      "From fabric to finished garment, the team manages sampling, precision manufacturing and quality control, then ships worldwide by air and by sea to the UK, the USA, Canada and beyond."
+    ],
+    color: "#d4a62a",            // the site's gold (#FFD776), deepened to read in daylight
+    floors: 6,
+    plot: 6,
+    featured: false,
+    website: "https://buyinghouse.binomargroup.com/"
   }
 ];

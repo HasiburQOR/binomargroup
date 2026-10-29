@@ -392,9 +392,19 @@ async function buildDistrict() {
   /* heightfield: base terrain + flattened pads for plaza & buildings */
   const baseH = makeBaseTerrain();
   const pads = [{ x: 0, z: 0, r: 21, y: baseH(0, 0) }];
+  const roadBed = withRoadBed(baseH);            // the graded road's height, for the plots beside it
   sorted.forEach((c, i) => {
     const s = spots[i], dims = getBuildingDims(c);
-    pads.push({ x: s.x, z: s.z, r: Math.max(dims.w, dims.d) * 0.62 + 3.2, y: baseH(s.x, s.z) });
+    const r = Math.max(dims.w, dims.d) * 0.62 + 3.2;
+    /* down on the slope a plot is a level terrace with a bank round it, at
+       the height of the road it stands beside — the road's embankment
+       reaches over the plot, and on the bare hillside the uphill side of a
+       broad building sinks into the slope */
+    if (s.plateau) pads.push({ x: s.x, z: s.z, r, y: baseH(s.x, s.z) });
+    else {
+      const rp = roadAt(s.roadT);
+      pads.push({ x: s.x, z: s.z, r: r + 4, flat: r * 0.85 / (r + 4), y: roadBed(rp.x, rp.z) });
+    }
   });
   const HP = withPads(baseH, pads);
   const H = withRoadBed(HP);                     // graded road: level across, smooth along
@@ -529,10 +539,12 @@ async function buildDistrict() {
     scene.add(t);
     windItems.push(t);
   }
-  for (let i = 0; i < 6; i++) {
-    /* offset half a step from the plateau plots so no lamp ends up
-       standing in a company's doorway */
-    const a = (i / 6) * Math.PI * 2 + 0.39 + Math.PI / 6;
+  /* the lamps stand between the summit plots, so none ends up in a
+     company's doorway, and one more each side of the road's arrival */
+  const plotA = spots.filter((s) => s.plateau).map((s) => Math.atan2(s.z, s.x)).map((a) => (a < 0 ? a + Math.PI * 2 : a));
+  const lampA = [0.91, 6.15];
+  for (let i = 1; i < plotA.length; i++) lampA.push((plotA[i - 1] + plotA[i]) / 2);
+  for (const a of lampA) {
     const lx = Math.cos(a) * 16.4, lz = Math.sin(a) * 16.4;
     const lamp = makeStreetLamp(H, lx, lz, rand);
     lamp.position.set(lx, groundY, lz);

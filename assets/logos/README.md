@@ -19,8 +19,11 @@ Files here:
 | Traveldoor Outbound | same as Traveldoor | same as Traveldoor | `#0f2340` |
 | MAQ Tourism | `maq-tourism.webp` | `maq-tourism-mark.webp` (the "MAQ" script) | — |
 | Hashtag Georgia | `hashtag-georgia.webp` | `hashtag-georgia-mark.webp` (the "G" pin) | — |
+| Surfing Online | `surfing-online.webp` | `surfing-online-mark.webp` (the swoosh, wifi and "S") | — |
 
-They were made from the originals in `/logo`: trimmed to the ink, the MAQ
+Surfing Online's came from its site (`surfing-online-logo.png`), already
+transparent: trimmed and its mark cut from the left of the wordmark.
+The others were made from the originals in `/logo`: trimmed to the ink, the MAQ
 logo's white background made transparent, and each mark cut out and centred
 on a 160 × 160 transparent square.
 
